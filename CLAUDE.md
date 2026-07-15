@@ -34,6 +34,61 @@ bureau via Server-Sent Events.
   Anthropic et en extrait des tâches structurées
 - `GET /api/stream` — SSE, pousse la liste complète des tâches à chaque changement
 
+## Modèle de données (une tâche)
+
+Chaque tâche stockée dans `data.json` (tableau d'objets) a la forme :
+
+- `id` — UUID (`crypto.randomUUID()`)
+- `priority` — l'une de `Urgent`, `Important`, `Normal`, `À vérifier`
+- `category` — l'une de `Atelier`, `Étude`, `Commande/Matériel`, `Livraison`,
+  `Grue/Levage`, `Bureau`
+- `description` — texte libre, tronqué à 300 caractères
+- `chantier` — texte libre, tronqué à 80 caractères (idéalement une valeur du
+  référentiel CHANTIERS, mais non forcé côté serveur)
+- `responsable` — texte libre, tronqué à 80 caractères (idéalement une valeur du
+  référentiel PERSONNES, mais non forcé côté serveur)
+- `echeance` — texte libre, tronqué à 40 caractères (ex. `2026-07-20`, `Immédiate`)
+- `done` — booléen, `false` à la création
+- `source` — `'manuel'` si créée via le formulaire, ou le nom du fichier importé
+  (ex. `compte-rendu-2026-07-14.pdf`) si extraite par l'IA
+- `createdAt` — timestamp `Date.now()` (millisecondes epoch)
+
+## Référentiels personnes / chantiers
+
+Les tableaux `PERSONNES` et `CHANTIERS` sont codés en dur **uniquement dans
+`server.js`** (utilisés dans `buildPrompt()` pour l'extraction IA, et exposés via
+`GET /api/referentiels`). Le frontend (`public/script.js`, fonction `init()` ligne
+385-388) ne les duplique pas : il les récupère dynamiquement au chargement via cet
+endpoint. Il n'y a donc **qu'un seul endroit à modifier** (`server.js`) pour mettre
+à jour ces référentiels — pas de risque de désynchronisation entre extraction IA et
+menus du frontend.
+
+## Logique du prompt d'extraction IA
+
+`buildPrompt()` (dans `server.js`) suppose que le compte rendu suit la structure
+imposée par le prompt Plaud AI utilisé en interne chez CHV, avec une section
+"11. Liste complète des actions à faire" (tableau : Priorité, Action, Chantier/sujet,
+Responsable, Échéance, Commentaire) comme source principale et la plus fiable ; les
+tâches importantes mentionnées ailleurs dans le document viennent en complément.
+Si CHV modifie la structure de son prompt Plaud, `buildPrompt()` devra être adapté
+en conséquence pour que l'extraction reste fiable.
+
+`MAX_TASKS_PER_IMPORT` (défaut 40) borne le nombre de tâches extraites par import,
+pour éviter les réponses IA tronquées sur de longs comptes rendus ; en cas de
+dépassement, le prompt demande de prioriser les tâches `Urgent` puis `Important`.
+
+## Déploiement Render
+
+- Hébergé sur **Render** (Web Service), déploiement automatique à chaque push sur
+  `main`.
+- Variables d'environnement à configurer sur Render : `ANTHROPIC_API_KEY`,
+  `DATA_DIR=/data`.
+- Disque persistant Render monté sur `/data` (1 Go) pour que `data.json` survive
+  aux redéploiements.
+- Build command : `npm install` — Start command : `npm start`.
+- Plan gratuit actuel : le service se met en veille après 15 min d'inactivité
+  (~30-50s de réveil au réveil).
+
 ## Dépôt GitHub
 
 Remote `origin` : `https://github.com/PLdev83/CHV-Dashboard.git`, branche `main`.
@@ -43,6 +98,20 @@ avancée que celle précédemment poussée sur GitHub. Historique fusionné le 2
 (`git merge --allow-unrelated-histories`) plutôt qu'écrasé, pour préserver l'historique
 distant existant. Les anciens fichiers `download`, `script.js`, `style.css` à la racine
 (reliquats d'une version antérieure) ont été supprimés au profit de `public/`.
+
+## Limites connues et pistes d'évolution
+
+- Pas d'authentification : toute personne avec le lien peut tout voir/modifier, sans
+  distinction de droits par rôle.
+- Pas de gestion de conflit : dernière sauvegarde gagne en cas de modification
+  simultanée de la même tâche.
+- Stockage fichier JSON suffisant pour le volume actuel CHV, mais ne supporte pas
+  plusieurs instances serveur en parallèle. Migrer vers SQLite/PostgreSQL si le
+  besoin grandit.
+- Piste évoquée mais non développée : pousser les tâches assignées vers Microsoft
+  To Do / Outlook via Microsoft Graph API (nécessiterait l'enregistrement d'une
+  app Azure/Entra côté CHV et la correspondance noms référentiel ↔ comptes
+  Microsoft des collaborateurs).
 
 ## Instructions permanentes pour Claude sur ce projet
 
