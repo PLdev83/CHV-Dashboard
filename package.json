@@ -8,9 +8,10 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.6",
+    "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "multer": "^2.0.0",
-    "dotenv": "^16.4.5"
+    "multer": "^2.0.0"
   },
   "engines": {
     "node": ">=18"

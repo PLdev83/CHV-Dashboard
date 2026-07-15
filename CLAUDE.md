@@ -13,16 +13,21 @@ bureau via Server-Sent Events.
   en statique, expose l'API REST, diffuse les mises à jour via SSE (`GET /api/stream`).
 - **`public/`** — frontend statique (`index.html`, `script.js`, `style.css`), aucune
   étape de build.
-- **`data.json`** — stockage des tâches, fichier JSON plat (pas de base de données).
-  Chemin configurable via `DATA_DIR` (utile pour un disque persistant en hébergement).
+- **Stockage : Supabase (Postgres)**, table `tasks`. Client créé côté serveur avec la
+  clé `service_role` (tous les droits, jamais exposée au frontend). Le frontend
+  n'accède jamais directement à Supabase : il passe uniquement par l'API REST de
+  `server.js`.
 - **Pas d'authentification** — tout le monde avec le lien voit et modifie tout.
 
 ### Variables d'environnement (voir `.env.example`)
 
 - `ANTHROPIC_API_KEY` — requise pour l'extraction IA (`POST /api/extract`) ; sans elle
   le serveur démarre quand même mais renvoie une erreur 500 sur cet endpoint.
+- `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — requises pour le stockage des tâches
+  (trouvables dans Supabase > Project Settings > API). Sans elles, le client
+  Supabase créé au démarrage échoue dès la première requête sur `/api/tasks`.
 - `PORT` (défaut 3000), `ANTHROPIC_MODEL` (défaut `claude-sonnet-4-6`),
-  `MAX_TASKS_PER_IMPORT` (défaut 40), `DATA_DIR` (défaut : dossier du projet).
+  `MAX_TASKS_PER_IMPORT` (défaut 40).
 
 ### API
 
@@ -36,9 +41,11 @@ bureau via Server-Sent Events.
 
 ## Modèle de données (une tâche)
 
-Chaque tâche stockée dans `data.json` (tableau d'objets) a la forme :
+Chaque tâche est une ligne de la table Postgres `tasks` (colonnes en `snake_case`),
+renvoyée par l'API en JSON (clés en `camelCase`) sous la forme :
 
-- `id` — UUID (`crypto.randomUUID()`)
+- `id` — UUID, généré automatiquement par Postgres à l'insertion (plus de
+  `crypto.randomUUID()` côté serveur)
 - `priority` — l'une de `Urgent`, `Important`, `Normal`, `À vérifier`
 - `category` — l'une de `Atelier`, `Étude`, `Commande/Matériel`, `Livraison`,
   `Grue/Levage`, `Bureau`
@@ -51,7 +58,10 @@ Chaque tâche stockée dans `data.json` (tableau d'objets) a la forme :
 - `done` — booléen, `false` à la création
 - `source` — `'manuel'` si créée via le formulaire, ou le nom du fichier importé
   (ex. `compte-rendu-2026-07-14.pdf`) si extraite par l'IA
-- `createdAt` — timestamp `Date.now()` (millisecondes epoch)
+- `createdAt` — timestamp `Date.now()` (millisecondes epoch). **Colonne Postgres :
+  `created_at` (bigint)**. Le frontend (`public/script.js`) attend `createdAt` en
+  camelCase ; `server.js` fait le mapping (`toApiTask()`) sur toutes les réponses
+  API, aucun changement requis côté frontend.
 
 ## Référentiels personnes / chantiers
 
@@ -82,20 +92,19 @@ dépassement, le prompt demande de prioriser les tâches `Urgent` puis `Importan
 - Hébergé sur **Render** (Web Service), déploiement automatique à chaque push sur
   `main`.
 - Variables d'environnement à configurer sur Render : `ANTHROPIC_API_KEY`,
-  `DATA_DIR=/data`.
-- Disque persistant Render monté sur `/data` (1 Go) pour que `data.json` survive
-  aux redéploiements.
+  `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`.
 - Build command : `npm install` — Start command : `npm start`.
 - Plan gratuit actuel : le service se met en veille après 15 min d'inactivité
   (~30-50s de réveil au réveil).
-- **Le plan gratuit actuel ne supporte pas les disques persistants** (fonctionnalité
-  verrouillée sur Render, icône éclair). `DATA_DIR` n'est donc **pas configuré** pour
-  l'instant : `data.json` reste dans le dossier du code et est **réinitialisé à
-  chaque redéploiement**. `server.js` crée désormais `DATA_DIR` automatiquement s'il
-  n'existe pas (`fs.mkdirSync(DATA_DIR, { recursive: true })`), ce qui évite un crash
-  si cette variable est configurée vers un dossier pas encore créé — mais ça ne
-  résout pas la perte de données. Passer sur un plan payant avec disque persistant
-  sera nécessaire pour un usage réel en production par l'équipe.
+- **Le stockage n'est plus lié au disque de Render** depuis la migration vers
+  Supabase (Postgres) : les tâches survivent désormais aux redéploiements sans
+  disque persistant Render. Le problème de disque persistant sur le plan gratuit
+  Render (qui avait causé un crash `ENOENT`) ne se pose donc plus.
+- **Supabase, plan gratuit** : le projet se met en pause après **7 jours
+  d'inactivité** (aucune requête). Une requête sur un projet en pause échoue le
+  temps qu'il se réactive (généralement moins d'une minute) — à garder en tête si
+  l'appli est peu utilisée pendant les vacances par exemple. Passer sur un plan
+  Supabase payant supprime cette mise en pause automatique.
 
 ## Dépôt GitHub
 
@@ -113,9 +122,8 @@ distant existant. Les anciens fichiers `download`, `script.js`, `style.css` à l
   distinction de droits par rôle.
 - Pas de gestion de conflit : dernière sauvegarde gagne en cas de modification
   simultanée de la même tâche.
-- Stockage fichier JSON suffisant pour le volume actuel CHV, mais ne supporte pas
-  plusieurs instances serveur en parallèle. Migrer vers SQLite/PostgreSQL si le
-  besoin grandit.
+- ~~Stockage fichier JSON qui ne supportait pas plusieurs instances serveur en
+  parallèle~~ — résolu par la migration vers Supabase/Postgres (2026-07-15).
 - Piste évoquée mais non développée : pousser les tâches assignées vers Microsoft
   To Do / Outlook via Microsoft Graph API (nécessiterait l'enregistrement d'une
   app Azure/Entra côté CHV et la correspondance noms référentiel ↔ comptes

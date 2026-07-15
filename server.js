@@ -1,6 +1,6 @@
 // Serveur de l'application "Planning des tâches — CHV"
 // - Sert le frontend statique (dossier /public)
-// - Expose une API REST pour lire/écrire les tâches (stockées dans data.json)
+// - Expose une API REST pour lire/écrire les tâches (stockées dans Supabase/Postgres)
 // - Diffuse les mises à jour en direct à tous les navigateurs connectés (Server-Sent Events)
 // - Reçoit un compte rendu (txt/pdf), appelle l'API Anthropic pour en extraire des tâches
 
@@ -10,16 +10,10 @@ require('dotenv').config();
 
 const express = require('express');
 const multer = require('multer');
-const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
+const { createClient } = require('@supabase/supabase-js');
 
 const PORT = process.env.PORT || 3000;
-// DATA_DIR permet de pointer vers un disque persistant en hébergement (ex. Render, Railway).
-// En local, par défaut, les données restent simplement à côté du code.
-const DATA_DIR = process.env.DATA_DIR || __dirname;
-fs.mkdirSync(DATA_DIR, { recursive: true });
-const DATA_FILE = path.join(DATA_DIR, 'data.json');
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 // Nombre maximum de tâches extraites par import. Sans la contrainte des artefacts Claude,
@@ -31,52 +25,65 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
-// ---------- Stockage (fichier JSON) ----------
-// Pour une équipe de la taille de CHV, un fichier JSON suffit largement.
-// À faire évoluer vers une vraie base (SQLite/Postgres) si le volume grandit ou si
-// plusieurs instances du serveur tournent en parallèle (le fichier n'est pas verrouillé).
-function loadTasks() {
-  try {
-    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  } catch (e) {
-    return [];
-  }
+// ---------- Stockage (Supabase / Postgres) ----------
+// Client service_role : tous les droits, ce qui est normal puisqu'il ne tourne
+// que côté serveur et n'est jamais exposé au frontend.
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+// Le frontend attend une clé "createdAt" (camelCase) ; la colonne Postgres est "created_at".
+function toApiTask({ created_at, ...rest }) {
+  return { ...rest, createdAt: created_at };
 }
-function saveTasks(tasks) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(tasks, null, 2), 'utf8');
+
+async function getTasks() {
+  const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
+  if (error) throw error;
+  return data.map(toApiTask);
 }
-if (!fs.existsSync(DATA_FILE)) saveTasks([]);
 
 // ---------- Temps réel (Server-Sent Events) ----------
 // Chaque navigateur connecté garde une connexion HTTP ouverte ; à chaque changement,
-// on pousse la liste complète des tâches à tout le monde. Simple et suffisant pour
-// une équipe de quelques dizaines de personnes.
+// on relit les tâches depuis Supabase et on pousse la liste complète à tout le monde.
+// Simple et suffisant pour une équipe de quelques dizaines de personnes.
 let clients = [];
-function broadcast() {
-  const payload = `data: ${JSON.stringify(loadTasks())}\n\n`;
+async function broadcast() {
+  let tasks;
+  try {
+    tasks = await getTasks();
+  } catch (e) {
+    console.error('Erreur broadcast (lecture Supabase) :', e);
+    return;
+  }
+  const payload = `data: ${JSON.stringify(tasks)}\n\n`;
   clients.forEach(res => res.write(payload));
 }
-app.get('/api/stream', (req, res) => {
+app.get('/api/stream', async (req, res) => {
   res.set({
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     'Connection': 'keep-alive'
   });
   res.flushHeaders();
-  res.write(`data: ${JSON.stringify(loadTasks())}\n\n`);
+  try {
+    res.write(`data: ${JSON.stringify(await getTasks())}\n\n`);
+  } catch (e) {
+    console.error('Erreur SSE (lecture Supabase) :', e);
+  }
   clients.push(res);
   req.on('close', () => { clients = clients.filter(c => c !== res); });
 });
 
 // ---------- API tâches ----------
-app.get('/api/tasks', (req, res) => {
-  res.json(loadTasks());
+app.get('/api/tasks', async (req, res) => {
+  try {
+    res.json(await getTasks());
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-app.post('/api/tasks', (req, res) => {
-  const tasks = loadTasks();
-  const t = {
-    id: crypto.randomUUID(),
+app.post('/api/tasks', async (req, res) => {
+  const row = {
     priority: req.body.priority || 'À vérifier',
     category: req.body.category || 'Bureau',
     description: String(req.body.description || '').slice(0, 300),
@@ -85,38 +92,42 @@ app.post('/api/tasks', (req, res) => {
     echeance: String(req.body.echeance || '').slice(0, 40),
     done: false,
     source: req.body.source || 'manuel',
-    createdAt: Date.now()
+    created_at: Date.now()
   };
-  tasks.push(t);
-  saveTasks(tasks);
-  broadcast();
-  res.status(201).json(t);
+  const { data, error } = await supabase.from('tasks').insert(row).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  await broadcast();
+  res.status(201).json(toApiTask(data));
 });
 
-app.put('/api/tasks/:id', (req, res) => {
-  const tasks = loadTasks();
-  const idx = tasks.findIndex(t => t.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Tâche introuvable' });
-  tasks[idx] = { ...tasks[idx], ...req.body, id: tasks[idx].id };
-  saveTasks(tasks);
-  broadcast();
-  res.json(tasks[idx]);
+app.put('/api/tasks/:id', async (req, res) => {
+  const { id, createdAt, ...patch } = req.body;
+  const { data, error } = await supabase.from('tasks').update(patch).eq('id', req.params.id).select().single();
+  if (error) {
+    const notFound = error.code === 'PGRST116';
+    return res.status(notFound ? 404 : 500).json({ error: notFound ? 'Tâche introuvable' : error.message });
+  }
+  await broadcast();
+  res.json(toApiTask(data));
 });
 
-app.delete('/api/tasks/:id', (req, res) => {
-  let tasks = loadTasks();
-  tasks = tasks.filter(t => t.id !== req.params.id);
-  saveTasks(tasks);
-  broadcast();
+app.delete('/api/tasks/:id', async (req, res) => {
+  const { error } = await supabase.from('tasks').delete().eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  await broadcast();
   res.status(204).end();
 });
 
-app.post('/api/tasks/clear-done', (req, res) => {
-  let tasks = loadTasks();
-  tasks = tasks.filter(t => !t.done);
-  saveTasks(tasks);
-  broadcast();
-  res.json(tasks);
+app.post('/api/tasks/clear-done', async (req, res) => {
+  const { error } = await supabase.from('tasks').delete().eq('done', true);
+  if (error) return res.status(500).json({ error: error.message });
+  try {
+    const tasks = await getTasks();
+    await broadcast();
+    res.json(tasks);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ---------- Référentiels (repris du prompt Plaud) ----------
@@ -228,8 +239,8 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
       const errText = await response.text();
       return res.status(502).json({ error: `Appel API Anthropic échoué (${response.status}) : ${errText.slice(0, 300)}` });
     }
-    const data = await response.json();
-    const text = (data.content || []).map(b => b.text || '').join('\n');
+    const anthropicData = await response.json();
+    const text = (anthropicData.content || []).map(b => b.text || '').join('\n');
     const clean = text.replace(/```json|```/g, '').trim();
     const match = clean.match(/\[[\s\S]*\]/);
     const jsonStr = match ? match[0] : clean;
@@ -247,9 +258,7 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
     }
     if (!Array.isArray(extracted)) throw new Error('Réponse inattendue de l\'IA');
 
-    const tasks = loadTasks();
-    const added = extracted.map(t => ({
-      id: crypto.randomUUID(),
+    const rows = extracted.map(t => ({
       priority: ['Urgent', 'Important', 'Normal', 'À vérifier'].includes(t.p) ? t.p : 'À vérifier',
       category: ['Atelier', 'Étude', 'Commande/Matériel', 'Livraison', 'Grue/Levage', 'Bureau'].includes(t.c) ? t.c : 'Bureau',
       description: String(t.d || '').slice(0, 300),
@@ -258,11 +267,12 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
       echeance: cleanField(t.e),
       done: false,
       source: req.file.originalname,
-      createdAt: Date.now()
+      created_at: Date.now()
     }));
-    saveTasks(tasks.concat(added));
-    broadcast();
-    res.json({ added: added.length, tasks: added });
+    const { data, error } = await supabase.from('tasks').insert(rows).select();
+    if (error) throw error;
+    await broadcast();
+    res.json({ added: data.length, tasks: data.map(toApiTask) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message || String(err) });
