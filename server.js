@@ -18,6 +18,7 @@ const PORT = process.env.PORT || 3000;
 // DATA_DIR permet de pointer vers un disque persistant en hébergement (ex. Render, Railway).
 // En local, par défaut, les données restent simplement à côté du code.
 const DATA_DIR = process.env.DATA_DIR || __dirname;
+fs.mkdirSync(DATA_DIR, { recursive: true });
 const DATA_FILE = path.join(DATA_DIR, 'data.json');
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';

@@ -88,6 +88,14 @@ dépassement, le prompt demande de prioriser les tâches `Urgent` puis `Importan
 - Build command : `npm install` — Start command : `npm start`.
 - Plan gratuit actuel : le service se met en veille après 15 min d'inactivité
   (~30-50s de réveil au réveil).
+- **Le plan gratuit actuel ne supporte pas les disques persistants** (fonctionnalité
+  verrouillée sur Render, icône éclair). `DATA_DIR` n'est donc **pas configuré** pour
+  l'instant : `data.json` reste dans le dossier du code et est **réinitialisé à
+  chaque redéploiement**. `server.js` crée désormais `DATA_DIR` automatiquement s'il
+  n'existe pas (`fs.mkdirSync(DATA_DIR, { recursive: true })`), ce qui évite un crash
+  si cette variable est configurée vers un dossier pas encore créé — mais ça ne
+  résout pas la perte de données. Passer sur un plan payant avec disque persistant
+  sera nécessaire pour un usage réel en production par l'équipe.
 
 ## Dépôt GitHub
 
