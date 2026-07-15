@@ -144,6 +144,12 @@ L'utilisateur a demandé une prise en charge autonome complète de ce dossier :
    nouveau champ de données...) : mettre à jour ce fichier en conséquence.
 5. En cas d'erreur non résolue : expliquer clairement le blocage plutôt que de
    s'arrêter silencieusement.
+6. Toute modification touchant directement la base Supabase en production (ALTER
+   TABLE, DROP TABLE, TRUNCATE, DELETE sans clause WHERE précise, modification de
+   schéma) reste soumise à confirmation explicite au cas par cas, au même titre que
+   le force-push git. Les opérations normales de l'application (INSERT/UPDATE/DELETE
+   par id via l'API, comme déjà en place dans `server.js`) ne sont pas concernées par
+   cette règle.
 
 Ceci ne couvre que ce dépôt. Les actions destructives (force-push, suppression de
 branches, reset --hard, suppression de données) restent soumises à confirmation
