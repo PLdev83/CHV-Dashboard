@@ -65,6 +65,9 @@ header .sub{color:var(--muted); font-size:13px; margin-top:4px; max-width:420px;
 #status.error{color:#E38686;}
 #status.ok{color:var(--cat-commande);}
 
+.focus-header{display:flex; align-items:center; gap:14px; margin-bottom:18px;}
+.focus-header h2{font-size:20px; font-weight:700;}
+
 .view-switch{display:flex; gap:6px; margin-bottom:18px; flex-wrap:wrap;}
 .view-btn{
   background:var(--panel); border:1px solid var(--line); color:var(--muted);
@@ -162,6 +165,8 @@ header .sub{color:var(--muted); font-size:13px; margin-top:4px; max-width:420px;
   white-space:nowrap;
 }
 .tag.date{color:var(--ink); background:rgba(224,169,78,0.16);}
+.tag.clickable{cursor:pointer;}
+.tag.clickable:hover{background:rgba(255,255,255,0.16); color:var(--ink);}
 .card .del{
   background:none; border:none; color:var(--muted); cursor:pointer; font-size:15px; line-height:1;
   padding:0 2px; flex-shrink:0;

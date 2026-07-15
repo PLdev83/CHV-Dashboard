@@ -16,6 +16,21 @@ let editingId = null;
 let tasks = [];
 let PERSONNES = [];
 let CHANTIERS = [];
+let focusPerson = null;
+
+// Vue focus : regroupe toujours par priorité, sans jamais modifier currentView
+// ni activeFilters, pour que "◀ Retour" restaure exactement l'état précédent.
+function effectiveView(){ return focusPerson ? 'priority' : currentView; }
+function enterFocus(name){
+  const n = (name || '').trim();
+  if(!n) return;
+  focusPerson = n;
+  render();
+}
+function exitFocus(){
+  focusPerson = null;
+  render();
+}
 
 function setStatus(msg, isError=false, isOk=false){
   const el = document.getElementById('status');
@@ -114,13 +129,40 @@ function buildOptions(list, current, noneLabel){
   return opts.join('');
 }
 
+function renderFocusHeader(){
+  const viewSwitchEl = document.getElementById('viewSwitch');
+  let focusHeaderEl = document.getElementById('focusHeader');
+  viewSwitchEl.style.display = focusPerson ? 'none' : '';
+  if(!focusPerson){
+    if(focusHeaderEl) focusHeaderEl.remove();
+    return;
+  }
+  if(!focusHeaderEl){
+    focusHeaderEl = document.createElement('div');
+    focusHeaderEl.id = 'focusHeader';
+    focusHeaderEl.className = 'focus-header';
+    document.getElementById('board').before(focusHeaderEl);
+  }
+  focusHeaderEl.innerHTML = '';
+  const backBtn = document.createElement('button');
+  backBtn.className = 'btn ghost';
+  backBtn.textContent = '◀ Retour';
+  backBtn.onclick = exitFocus;
+  const title = document.createElement('h2');
+  title.textContent = 'Tâches de ' + focusPerson;
+  focusHeaderEl.appendChild(backBtn);
+  focusHeaderEl.appendChild(title);
+}
+
 function render(){
+  renderFocusHeader();
+  const view = effectiveView();
   const board = document.getElementById('board');
-  board.className = 'board' + (currentView==='priority' ? ' priority-view' : '');
+  board.className = 'board' + (view==='priority' ? ' priority-view' : '');
   board.innerHTML = '';
 
-  const visibleTasks = tasks.filter(t=>activeFilters.has(t.category));
-  const groups = groupTasks(currentView, visibleTasks);
+  const visibleTasks = tasks.filter(t=>activeFilters.has(t.category) && (!focusPerson || (t.responsable||'').trim()===focusPerson));
+  const groups = groupTasks(view, visibleTasks);
 
   groups.forEach(g=>{
     const col = document.createElement('div');
@@ -151,12 +193,12 @@ function render(){
       const taskId = e.dataTransfer.getData('text/plain');
       const t = tasks.find(x=>x.id===taskId);
       if(!t) return;
-      const fallback = currentView==='person' ? 'Non assigné' : currentView==='chantier' ? 'Sans chantier' : null;
+      const fallback = view==='person' ? 'Non assigné' : view==='chantier' ? 'Sans chantier' : null;
       const value = (fallback && g.key===fallback) ? '' : g.key;
       const patch = {};
-      if(currentView==='priority') patch.priority = value;
-      else if(currentView==='person') patch.responsable = value;
-      else if(currentView==='chantier') patch.chantier = value;
+      if(view==='priority') patch.priority = value;
+      else if(view==='person') patch.responsable = value;
+      else if(view==='chantier') patch.chantier = value;
       await apiUpdateTask(t.id, patch);
     });
 
@@ -250,7 +292,7 @@ function renderCard(t){
 
   const meta = document.createElement('div');
   meta.className = 'meta';
-  if(currentView !== 'priority'){
+  if(effectiveView() !== 'priority'){
     const pTag = document.createElement('span');
     pTag.className = 'tag';
     pTag.textContent = t.priority;
@@ -266,16 +308,18 @@ function renderCard(t){
     dTag.textContent = '📅 ' + t.echeance;
     meta.appendChild(dTag);
   }
-  if(currentView !== 'chantier' && t.chantier){
+  if(effectiveView() !== 'chantier' && t.chantier){
     const cTag = document.createElement('span');
     cTag.className = 'tag';
     cTag.textContent = t.chantier;
     meta.appendChild(cTag);
   }
-  if(currentView !== 'person' && t.responsable){
+  if(effectiveView() !== 'person' && t.responsable){
     const rTag = document.createElement('span');
-    rTag.className = 'tag';
+    rTag.className = 'tag clickable';
     rTag.textContent = '👤 ' + t.responsable;
+    rTag.title = 'Voir les tâches de ' + t.responsable;
+    rTag.onclick = (e)=>{ e.stopPropagation(); enterFocus(t.responsable); };
     meta.appendChild(rTag);
   }
   body.appendChild(meta);
@@ -294,9 +338,9 @@ function renderCard(t){
 
 function showAddForm(container, addBtn, groupKey){
   addBtn.style.display = 'none';
-  const showPriority = currentView !== 'priority';
-  const showChantier = currentView !== 'chantier';
-  const showResponsable = currentView !== 'person';
+  const showPriority = effectiveView() !== 'priority';
+  const showChantier = effectiveView() !== 'chantier';
+  const showResponsable = effectiveView() !== 'person';
 
   const form = document.createElement('div');
   form.className = 'add-form';
