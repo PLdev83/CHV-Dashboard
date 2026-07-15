@@ -1,0 +1,203 @@
+:root{
+  --bg:#16232E;
+  --panel:#1F313F;
+  --panel-alt:#243748;
+  --line:#3A5468;
+  --ink:#EAF3F5;
+  --muted:#7E9AAA;
+  --accent:#E0A94E;
+  --urgent:#D96C6C;
+  --important:#E0A94E;
+  --normal:#7FA8C9;
+  --tocheck:#7E9AAA;
+  --cat-atelier:#E0A94E;
+  --cat-etude:#B9A6D9;
+  --cat-commande:#8FBF9F;
+  --cat-livraison:#7FD8E0;
+  --cat-grue:#E08F6F;
+  --cat-bureau:#9AAAB5;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:
+    linear-gradient(var(--bg),var(--bg)),
+    repeating-linear-gradient(0deg, rgba(122,163,184,0.06) 0px, rgba(122,163,184,0.06) 1px, transparent 1px, transparent 32px),
+    repeating-linear-gradient(90deg, rgba(122,163,184,0.06) 0px, rgba(122,163,184,0.06) 1px, transparent 1px, transparent 32px);
+  color:var(--ink);
+  font-family:'IBM Plex Sans', sans-serif;
+  min-height:100vh;
+  padding:28px 32px 60px;
+}
+h1,h2,h3{font-family:'Space Grotesk', sans-serif; margin:0;}
+.mono{font-family:'IBM Plex Mono', monospace;}
+
+header{
+  display:flex; justify-content:space-between; align-items:flex-end;
+  flex-wrap:wrap; gap:16px;
+  margin-bottom:20px;
+  border-bottom:1px solid var(--line);
+  padding-bottom:18px;
+}
+header .titles .eyebrow{
+  font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:2px;
+  color:var(--accent); text-transform:uppercase; margin-bottom:6px;
+}
+header h1{font-size:26px; font-weight:700; letter-spacing:0.2px;}
+header .sub{color:var(--muted); font-size:13px; margin-top:4px; max-width:420px;}
+
+.upload-zone{display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end;}
+#fileInput{display:none;}
+.btn{
+  font-family:'IBM Plex Sans', sans-serif;
+  background:var(--panel-alt); color:var(--ink); border:1px solid var(--line);
+  padding:10px 16px; border-radius:6px; cursor:pointer; font-size:13.5px; font-weight:500;
+  transition:border-color .15s, background .15s;
+}
+.btn:hover{border-color:var(--accent);}
+.btn.primary{background:var(--accent); color:#1B2A38; border-color:var(--accent); font-weight:600;}
+.btn.primary:hover{filter:brightness(1.08);}
+.btn.ghost{background:transparent;}
+.btn:disabled{opacity:0.5; cursor:not-allowed;}
+.btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+
+#status{font-size:12.5px; color:var(--muted); margin-top:6px; min-height:16px; text-align:right;}
+#status.error{color:#E38686;}
+#status.ok{color:var(--cat-commande);}
+
+.view-switch{display:flex; gap:6px; margin-bottom:18px; flex-wrap:wrap;}
+.view-btn{
+  background:var(--panel); border:1px solid var(--line); color:var(--muted);
+  padding:8px 15px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;
+}
+.view-btn.active{background:var(--panel-alt); color:var(--ink); border-color:var(--accent);}
+.view-btn:hover{color:var(--ink);}
+
+.pegboard{display:flex; gap:16px; flex-wrap:wrap; margin-bottom:26px;}
+.peg-tag{
+  position:relative;
+  background:var(--panel); border:1px solid var(--line);
+  border-radius:4px;
+  padding:9px 14px 9px 30px;
+  font-size:13px; font-weight:500;
+  cursor:pointer;
+  transform:rotate(var(--rot,0deg));
+  transition:opacity .15s;
+  user-select:none;
+}
+.peg-tag:nth-child(1){--rot:-1.1deg;}
+.peg-tag:nth-child(2){--rot:0.7deg;}
+.peg-tag:nth-child(3){--rot:-0.5deg;}
+.peg-tag:nth-child(4){--rot:0.9deg;}
+.peg-tag:nth-child(5){--rot:-0.8deg;}
+.peg-tag:nth-child(6){--rot:0.5deg;}
+.peg-tag::before{
+  content:''; position:absolute; left:10px; top:50%; transform:translateY(-50%);
+  width:8px; height:8px; border-radius:50%;
+  background:var(--dot); box-shadow:0 0 0 2px rgba(0,0,0,0.25) inset;
+}
+.peg-tag.off{opacity:0.32;}
+.peg-tag.off:hover{opacity:0.55;}
+.peg-tag[data-cat="Atelier"]{--dot:var(--cat-atelier);}
+.peg-tag[data-cat="Étude"]{--dot:var(--cat-etude);}
+.peg-tag[data-cat="Commande/Matériel"]{--dot:var(--cat-commande);}
+.peg-tag[data-cat="Livraison"]{--dot:var(--cat-livraison);}
+.peg-tag[data-cat="Grue/Levage"]{--dot:var(--cat-grue);}
+.peg-tag[data-cat="Bureau"]{--dot:var(--cat-bureau);}
+
+.board{display:flex; flex-wrap:wrap; gap:16px; align-items:start;}
+.board.priority-view{flex-wrap:nowrap; overflow-x:auto;}
+.col{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:8px;
+  display:flex; flex-direction:column;
+  min-height:180px;
+  flex:1 1 260px;
+  min-width:240px;
+  max-width:340px;
+}
+.priority-view .col{flex:1 1 0; min-width:220px; max-width:none;}
+.col-head{
+  padding:14px 14px 12px;
+  border-bottom:1px solid var(--line);
+  border-top:3px solid var(--pcolor, var(--line));
+  border-radius:8px 8px 0 0;
+}
+.col-head .label{font-size:15px; font-weight:700;}
+.col-head .count{font-size:11px; color:var(--muted); font-family:'IBM Plex Mono', monospace; margin-top:2px;}
+
+.cards{flex:1; padding:12px; display:flex; flex-direction:column; gap:9px; min-height:50px; border-radius:6px; transition:background .12s;}
+.cards.drag-over{background:rgba(224,169,78,0.08); outline:1px dashed var(--accent); outline-offset:-4px;}
+.card{
+  background:var(--panel-alt); border-radius:6px; padding:10px 11px 10px 12px;
+  border-left:3px solid var(--cat-color, var(--muted));
+  font-size:13px; line-height:1.42;
+  display:flex; gap:9px; align-items:flex-start;
+  cursor:grab;
+}
+.card.dragging{opacity:0.35;}
+.card.edit-mode{cursor:default; flex-direction:column;}
+.card.edit-mode .body{width:100%;}
+.card.edit-mode textarea{
+  width:100%; resize:vertical; min-height:44px; background:var(--bg); color:var(--ink);
+  border:1px solid var(--line); border-radius:4px; padding:6px; font-family:inherit; font-size:12.5px;
+}
+.card.edit-mode input[type="text"], .card.edit-mode select{
+  background:var(--bg); color:var(--ink); border:1px solid var(--line); border-radius:4px;
+  padding:5px; font-size:12px; flex:1; min-width:0;
+}
+.card.edit-mode .row{display:flex; gap:6px; margin-top:6px;}
+.card.edit-mode .row button{flex:1; font-size:12px; padding:6px;}
+.card:not(.edit-mode) .body{cursor:pointer;}
+.card.done{opacity:0.42;}
+.card.done .desc{text-decoration:line-through;}
+.card input[type="checkbox"]{margin-top:2px; accent-color:var(--accent); cursor:pointer; flex-shrink:0;}
+.card .body{flex:1; min-width:0;}
+.card .desc{word-break:break-word; font-weight:500;}
+.card .meta{display:flex; gap:5px; flex-wrap:wrap; margin-top:6px;}
+.tag{
+  font-size:10.5px; font-family:'IBM Plex Mono', monospace;
+  padding:2px 6px; border-radius:3px; background:rgba(255,255,255,0.06); color:var(--muted);
+  white-space:nowrap;
+}
+.tag.date{color:var(--ink); background:rgba(224,169,78,0.16);}
+.card .del{
+  background:none; border:none; color:var(--muted); cursor:pointer; font-size:15px; line-height:1;
+  padding:0 2px; flex-shrink:0;
+}
+.card .del:hover{color:#E38686;}
+
+.add-row{padding:8px 12px 12px;}
+.add-btn{
+  width:100%; background:none; border:1px dashed var(--line); color:var(--muted);
+  border-radius:6px; padding:7px; font-size:12px; cursor:pointer;
+}
+.add-btn:hover{border-color:var(--accent); color:var(--accent);}
+.add-form{
+  background:var(--panel-alt); border:1px solid var(--line); border-radius:6px;
+  padding:9px; display:flex; flex-direction:column; gap:6px;
+}
+.add-form textarea{
+  resize:vertical; min-height:44px; background:var(--bg); color:var(--ink);
+  border:1px solid var(--line); border-radius:4px; padding:6px; font-family:inherit; font-size:12.5px;
+}
+.add-form input[type="text"], .add-form select{
+  background:var(--bg); color:var(--ink); border:1px solid var(--line); border-radius:4px;
+  padding:5px; font-size:12px;
+}
+.add-form .row{display:flex; gap:6px;}
+.add-form .row button{flex:1; font-size:12px; padding:6px;}
+
+.empty-hint{color:var(--muted); font-size:12px; text-align:center; padding:16px 4px;}
+
+footer{margin-top:26px; color:var(--muted); font-size:12px; display:flex; align-items:center; gap:10px;}
+.live-dot{color:var(--cat-commande); font-size:10px;}
+.live-dot.off{color:var(--urgent);}
+
+@media (max-width:960px){
+  .upload-zone{justify-content:flex-start;}
+  #status{text-align:left;}
+  .board.priority-view{flex-wrap:wrap; overflow-x:visible;}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;}}
