@@ -29,6 +29,9 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 // Client service_role : tous les droits, ce qui est normal puisqu'il ne tourne
 // que côté serveur et n'est jamais exposé au frontend.
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+// Permet de séparer données de test et de prod dans le même projet Supabase
+// (ex. SUPABASE_TABLE=tasks_dev en local), sans consommer un 2e projet gratuit.
+const SUPABASE_TABLE = process.env.SUPABASE_TABLE || 'tasks';
 
 // Le frontend attend une clé "createdAt" (camelCase) ; la colonne Postgres est "created_at".
 function toApiTask({ created_at, ...rest }) {
@@ -36,7 +39,7 @@ function toApiTask({ created_at, ...rest }) {
 }
 
 async function getTasks() {
-  const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
+  const { data, error } = await supabase.from(SUPABASE_TABLE).select('*').order('created_at', { ascending: true });
   if (error) throw error;
   return data.map(toApiTask);
 }
@@ -94,7 +97,7 @@ app.post('/api/tasks', async (req, res) => {
     source: req.body.source || 'manuel',
     created_at: Date.now()
   };
-  const { data, error } = await supabase.from('tasks').insert(row).select().single();
+  const { data, error } = await supabase.from(SUPABASE_TABLE).insert(row).select().single();
   if (error) return res.status(500).json({ error: error.message });
   await broadcast();
   res.status(201).json(toApiTask(data));
@@ -102,7 +105,7 @@ app.post('/api/tasks', async (req, res) => {
 
 app.put('/api/tasks/:id', async (req, res) => {
   const { id, createdAt, ...patch } = req.body;
-  const { data, error } = await supabase.from('tasks').update(patch).eq('id', req.params.id).select().single();
+  const { data, error } = await supabase.from(SUPABASE_TABLE).update(patch).eq('id', req.params.id).select().single();
   if (error) {
     const notFound = error.code === 'PGRST116';
     return res.status(notFound ? 404 : 500).json({ error: notFound ? 'Tâche introuvable' : error.message });
@@ -112,14 +115,14 @@ app.put('/api/tasks/:id', async (req, res) => {
 });
 
 app.delete('/api/tasks/:id', async (req, res) => {
-  const { error } = await supabase.from('tasks').delete().eq('id', req.params.id);
+  const { error } = await supabase.from(SUPABASE_TABLE).delete().eq('id', req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   await broadcast();
   res.status(204).end();
 });
 
 app.post('/api/tasks/clear-done', async (req, res) => {
-  const { error } = await supabase.from('tasks').delete().eq('done', true);
+  const { error } = await supabase.from(SUPABASE_TABLE).delete().eq('done', true);
   if (error) return res.status(500).json({ error: error.message });
   try {
     const tasks = await getTasks();
@@ -269,7 +272,7 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
       source: req.file.originalname,
       created_at: Date.now()
     }));
-    const { data, error } = await supabase.from('tasks').insert(rows).select();
+    const { data, error } = await supabase.from(SUPABASE_TABLE).insert(rows).select();
     if (error) throw error;
     await broadcast();
     res.json({ added: data.length, tasks: data.map(toApiTask) });

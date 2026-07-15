@@ -13,10 +13,10 @@ bureau via Server-Sent Events.
   en statique, expose l'API REST, diffuse les mises à jour via SSE (`GET /api/stream`).
 - **`public/`** — frontend statique (`index.html`, `script.js`, `style.css`), aucune
   étape de build.
-- **Stockage : Supabase (Postgres)**, table `tasks`. Client créé côté serveur avec la
-  clé `service_role` (tous les droits, jamais exposée au frontend). Le frontend
-  n'accède jamais directement à Supabase : il passe uniquement par l'API REST de
-  `server.js`.
+- **Stockage : Supabase (Postgres)**, table configurable via `SUPABASE_TABLE`
+  (défaut `tasks`). Client créé côté serveur avec la clé `service_role` (tous les
+  droits, jamais exposée au frontend). Le frontend n'accède jamais directement à
+  Supabase : il passe uniquement par l'API REST de `server.js`.
 - **Pas d'authentification** — tout le monde avec le lien voit et modifie tout.
 
 ### Variables d'environnement (voir `.env.example`)
@@ -26,8 +26,27 @@ bureau via Server-Sent Events.
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — requises pour le stockage des tâches
   (trouvables dans Supabase > Project Settings > API). Sans elles, le client
   Supabase créé au démarrage échoue dès la première requête sur `/api/tasks`.
+- `SUPABASE_TABLE` (optionnel, défaut `tasks`) — nom de la table Supabase utilisée
+  par toutes les requêtes de `server.js`. Voir "Séparation test/prod" ci-dessous.
 - `PORT` (défaut 3000), `ANTHROPIC_MODEL` (défaut `claude-sonnet-4-6`),
   `MAX_TASKS_PER_IMPORT` (défaut 40).
+
+### Séparation test/prod dans Supabase
+
+Un seul projet Supabase est utilisé pour la prod et pour les tests locaux (même
+`SUPABASE_URL`, même `SUPABASE_SERVICE_KEY`) — la séparation se fait uniquement via
+le **nom de la table** (`SUPABASE_TABLE`), pas via des projets Supabase distincts.
+
+Raison : le plan gratuit Supabase limite à **2 projets par compte** (pas par
+organisation) ; multiplier les projets pour chaque usage (prod, test, autres apps
+CHV) épuiserait vite ce quota. Pointer vers une table différente (ex. `tasks_dev`
+en local, créée avec le même schéma que `tasks`) coûte rien et évite de polluer les
+données réelles de l'équipe pendant les tests — voir l'incident du 2026-07-15 où des
+tâches de test étaient visibles en direct sur l'app de production via le SSE.
+
+En local : mettre `SUPABASE_TABLE=tasks_dev` dans `.env` (table à créer une fois
+dans Supabase, avec le même schéma que `tasks`). En production (Render) : ne pas
+définir `SUPABASE_TABLE`, ou la définir explicitement à `tasks`.
 
 ### API
 
@@ -41,7 +60,8 @@ bureau via Server-Sent Events.
 
 ## Modèle de données (une tâche)
 
-Chaque tâche est une ligne de la table Postgres `tasks` (colonnes en `snake_case`),
+Chaque tâche est une ligne de la table Postgres désignée par `SUPABASE_TABLE`
+(`tasks` par défaut, colonnes en `snake_case`),
 renvoyée par l'API en JSON (clés en `camelCase`) sous la forme :
 
 - `id` — UUID, généré automatiquement par Postgres à l'insertion (plus de
