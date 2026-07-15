@@ -1,0 +1,392 @@
+const CATS = {
+  "Atelier":            {color:"var(--cat-atelier)",   icon:"🪚"},
+  "Étude":               {color:"var(--cat-etude)",     icon:"✏️"},
+  "Commande/Matériel":  {color:"var(--cat-commande)",  icon:"📦"},
+  "Livraison":          {color:"var(--cat-livraison)", icon:"🚚"},
+  "Grue/Levage":        {color:"var(--cat-grue)",      icon:"🏗️"},
+  "Bureau":             {color:"var(--cat-bureau)",    icon:"📋"}
+};
+const PRIORITIES = ["Urgent","Important","Normal","À vérifier"];
+const PRIO_COLOR = {"Urgent":"var(--urgent)","Important":"var(--important)","Normal":"var(--normal)","À vérifier":"var(--tocheck)"};
+const PRIO_RANK = {"Urgent":0,"Important":1,"Normal":2,"À vérifier":3};
+
+let activeFilters = new Set(Object.keys(CATS));
+let currentView = 'priority';
+let editingId = null;
+let tasks = [];
+let PERSONNES = [];
+let CHANTIERS = [];
+
+function setStatus(msg, isError=false, isOk=false){
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = isError ? 'error' : (isOk ? 'ok' : '');
+}
+
+// ---------- API ----------
+async function apiGetTasks(){
+  const r = await fetch('/api/tasks');
+  return r.json();
+}
+async function apiAddTask(task){
+  const r = await fetch('/api/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(task) });
+  return r.json();
+}
+async function apiUpdateTask(id, patch){
+  const r = await fetch('/api/tasks/' + id, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patch) });
+  return r.json();
+}
+async function apiDeleteTask(id){
+  await fetch('/api/tasks/' + id, { method:'DELETE' });
+}
+async function apiClearDone(){
+  const r = await fetch('/api/tasks/clear-done', { method:'POST' });
+  return r.json();
+}
+async function apiGetReferentiels(){
+  const r = await fetch('/api/referentiels');
+  return r.json();
+}
+
+// ---------- Temps réel ----------
+function connectStream(){
+  const es = new EventSource('/api/stream');
+  const dot = document.getElementById('liveIndicator');
+  es.onopen = ()=> dot.classList.remove('off');
+  es.onerror = ()=> dot.classList.add('off');
+  es.onmessage = (e)=>{
+    try{
+      tasks = JSON.parse(e.data);
+      render();
+    }catch(err){ console.error('Flux temps réel illisible', err); }
+  };
+}
+
+function uid(){ return 't-' + Date.now() + '-' + Math.random().toString(36).slice(2,8); }
+
+function dateSortKey(echeance){
+  if(!echeance) return Infinity;
+  const s = echeance.toLowerCase();
+  if(s.includes('immédiat') || s.includes('immediate')) return -1;
+  const iso = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if(iso) return new Date(iso[0]).getTime();
+  const fr = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(fr) return new Date(`${fr[3]}-${fr[2]}-${fr[1]}`).getTime();
+  return Infinity - 1;
+}
+function taskComparator(a,b){
+  return (PRIO_RANK[a.priority]??9) - (PRIO_RANK[b.priority]??9) || dateSortKey(a.echeance) - dateSortKey(b.echeance);
+}
+
+function groupTasks(view, visibleTasks){
+  if(view === 'priority'){
+    return PRIORITIES.map(p=>({
+      key:p, label:p, accent:PRIO_COLOR[p],
+      tasks: visibleTasks.filter(t=>t.priority===p).sort((a,b)=>dateSortKey(a.echeance)-dateSortKey(b.echeance))
+    }));
+  }
+  const field = view === 'person' ? 'responsable' : 'chantier';
+  const fallback = view === 'person' ? 'Non assigné' : 'Sans chantier';
+  const map = {};
+  visibleTasks.forEach(t=>{
+    const key = (t[field] && t[field].trim()) ? t[field].trim() : fallback;
+    (map[key] = map[key] || []).push(t);
+  });
+  const keys = Object.keys(map).sort((a,b)=>{
+    if(a===fallback) return 1;
+    if(b===fallback) return -1;
+    return a.localeCompare(b,'fr');
+  });
+  return keys.map(k=>({ key:k, label:k, accent:null, tasks: map[k].sort(taskComparator) }));
+}
+
+function escapeHtml(s){
+  return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function buildOptions(list, current, noneLabel){
+  const opts = [`<option value="">${escapeHtml(noneLabel)}</option>`];
+  const all = [...list];
+  if(current && !all.includes(current)) all.push(current);
+  all.sort((a,b)=>a.localeCompare(b,'fr'));
+  all.forEach(v=>{
+    opts.push(`<option value="${escapeHtml(v)}" ${v===current?'selected':''}>${escapeHtml(v)}</option>`);
+  });
+  return opts.join('');
+}
+
+function render(){
+  const board = document.getElementById('board');
+  board.className = 'board' + (currentView==='priority' ? ' priority-view' : '');
+  board.innerHTML = '';
+
+  const visibleTasks = tasks.filter(t=>activeFilters.has(t.category));
+  const groups = groupTasks(currentView, visibleTasks);
+
+  groups.forEach(g=>{
+    const col = document.createElement('div');
+    col.className = 'col';
+
+    const head = document.createElement('div');
+    head.className = 'col-head';
+    if(g.accent) head.style.setProperty('--pcolor', g.accent);
+    head.innerHTML = `<div class="label">${escapeHtml(g.label)}</div><div class="count">${g.tasks.length} tâche${g.tasks.length>1?'s':''}</div>`;
+    col.appendChild(head);
+
+    const cardsWrap = document.createElement('div');
+    cardsWrap.className = 'cards';
+    if(g.tasks.length===0){
+      const hint = document.createElement('div');
+      hint.className = 'empty-hint';
+      hint.textContent = 'Rien ici pour le moment.';
+      cardsWrap.appendChild(hint);
+    }
+    g.tasks.forEach(t=> cardsWrap.appendChild(renderCard(t)));
+    col.appendChild(cardsWrap);
+
+    cardsWrap.addEventListener('dragover', (e)=>{ e.preventDefault(); cardsWrap.classList.add('drag-over'); });
+    cardsWrap.addEventListener('dragleave', ()=> cardsWrap.classList.remove('drag-over'));
+    cardsWrap.addEventListener('drop', async (e)=>{
+      e.preventDefault();
+      cardsWrap.classList.remove('drag-over');
+      const taskId = e.dataTransfer.getData('text/plain');
+      const t = tasks.find(x=>x.id===taskId);
+      if(!t) return;
+      const fallback = currentView==='person' ? 'Non assigné' : currentView==='chantier' ? 'Sans chantier' : null;
+      const value = (fallback && g.key===fallback) ? '' : g.key;
+      const patch = {};
+      if(currentView==='priority') patch.priority = value;
+      else if(currentView==='person') patch.responsable = value;
+      else if(currentView==='chantier') patch.chantier = value;
+      await apiUpdateTask(t.id, patch);
+    });
+
+    const addRow = document.createElement('div');
+    addRow.className = 'add-row';
+    const addBtn = document.createElement('button');
+    addBtn.className = 'add-btn';
+    addBtn.textContent = '+ ajouter une tâche';
+    addBtn.onclick = ()=> showAddForm(addRow, addBtn, g.key);
+    addRow.appendChild(addBtn);
+    col.appendChild(addRow);
+
+    board.appendChild(col);
+  });
+
+  const total = tasks.length;
+  const done = tasks.filter(t=>t.done).length;
+  document.getElementById('taskCount').textContent = total ? `${done} / ${total} tâches terminées` : 'Aucune tâche pour le moment — importe un compte rendu pour commencer.';
+}
+
+function renderEditCard(t){
+  const card = document.createElement('div');
+  card.className = 'card edit-mode';
+  card.style.setProperty('--cat-color', CATS[t.category]?.color || 'var(--muted)');
+
+  const wrap = document.createElement('div');
+  wrap.className = 'body';
+  wrap.innerHTML = `
+    <textarea class="editDesc">${escapeHtml(t.description)}</textarea>
+    <div class="row">
+      <select class="editCat">${Object.keys(CATS).map(c=>`<option value="${c}" ${c===t.category?'selected':''}>${CATS[c].icon} ${c}</option>`).join('')}</select>
+      <select class="editPrio">${PRIORITIES.map(p=>`<option value="${p}" ${p===t.priority?'selected':''}>${p}</option>`).join('')}</select>
+    </div>
+    <div class="row">
+      <select class="editChantier">${buildOptions(CHANTIERS, t.chantier, 'Sans chantier')}</select>
+      <select class="editResp">${buildOptions(PERSONNES, t.responsable, 'Non assigné')}</select>
+    </div>
+    <input type="text" class="editEch" placeholder="Échéance" value="${escapeHtml(t.echeance)}" style="margin-top:6px; width:100%;" />
+    <div class="row">
+      <button class="btn primary editSave" type="button">Enregistrer</button>
+      <button class="btn ghost editCancel" type="button">Annuler</button>
+    </div>
+  `;
+  card.appendChild(wrap);
+
+  wrap.querySelector('.editSave').onclick = async ()=>{
+    const patch = {
+      description: wrap.querySelector('.editDesc').value.trim() || t.description,
+      category: wrap.querySelector('.editCat').value,
+      priority: wrap.querySelector('.editPrio').value,
+      chantier: wrap.querySelector('.editChantier').value.trim(),
+      responsable: wrap.querySelector('.editResp').value.trim(),
+      echeance: wrap.querySelector('.editEch').value.trim()
+    };
+    editingId = null;
+    await apiUpdateTask(t.id, patch);
+  };
+  wrap.querySelector('.editCancel').onclick = ()=>{ editingId = null; render(); };
+
+  return card;
+}
+
+function renderCard(t){
+  if(editingId === t.id) return renderEditCard(t);
+
+  const card = document.createElement('div');
+  card.className = 'card' + (t.done ? ' done' : '');
+  card.style.setProperty('--cat-color', CATS[t.category]?.color || 'var(--muted)');
+  card.draggable = true;
+  card.addEventListener('dragstart', (e)=>{
+    e.dataTransfer.setData('text/plain', t.id);
+    e.dataTransfer.effectAllowed = 'move';
+    card.classList.add('dragging');
+  });
+  card.addEventListener('dragend', ()=> card.classList.remove('dragging'));
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = !!t.done;
+  cb.onchange = async ()=>{ await apiUpdateTask(t.id, { done: cb.checked }); };
+
+  const body = document.createElement('div');
+  body.className = 'body';
+  body.title = 'Cliquer pour modifier';
+  body.addEventListener('click', ()=>{ editingId = t.id; render(); });
+
+  const desc = document.createElement('div');
+  desc.className = 'desc';
+  desc.textContent = t.description;
+  body.appendChild(desc);
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  if(currentView !== 'priority'){
+    const pTag = document.createElement('span');
+    pTag.className = 'tag';
+    pTag.textContent = t.priority;
+    meta.appendChild(pTag);
+  }
+  const catTag = document.createElement('span');
+  catTag.className = 'tag';
+  catTag.textContent = (CATS[t.category]?.icon || '•') + ' ' + t.category;
+  meta.appendChild(catTag);
+  if(t.echeance){
+    const dTag = document.createElement('span');
+    dTag.className = 'tag date';
+    dTag.textContent = '📅 ' + t.echeance;
+    meta.appendChild(dTag);
+  }
+  if(currentView !== 'chantier' && t.chantier){
+    const cTag = document.createElement('span');
+    cTag.className = 'tag';
+    cTag.textContent = t.chantier;
+    meta.appendChild(cTag);
+  }
+  if(currentView !== 'person' && t.responsable){
+    const rTag = document.createElement('span');
+    rTag.className = 'tag';
+    rTag.textContent = '👤 ' + t.responsable;
+    meta.appendChild(rTag);
+  }
+  body.appendChild(meta);
+
+  const del = document.createElement('button');
+  del.className = 'del';
+  del.textContent = '✕';
+  del.title = 'Supprimer';
+  del.onclick = async (e)=>{ e.stopPropagation(); await apiDeleteTask(t.id); };
+
+  card.appendChild(cb);
+  card.appendChild(body);
+  card.appendChild(del);
+  return card;
+}
+
+function showAddForm(container, addBtn, groupKey){
+  addBtn.style.display = 'none';
+  const showPriority = currentView !== 'priority';
+  const showChantier = currentView !== 'chantier';
+  const showResponsable = currentView !== 'person';
+
+  const form = document.createElement('div');
+  form.className = 'add-form';
+  form.innerHTML = `
+    <textarea placeholder="Décrire la tâche..."></textarea>
+    <select class="catSel">${Object.keys(CATS).map(c=>`<option value="${c}">${CATS[c].icon} ${c}</option>`).join('')}</select>
+    ${showPriority ? `<select class="prioSel">${PRIORITIES.map(p=>`<option value="${p}">${p}</option>`).join('')}</select>` : ''}
+    ${showChantier ? `<select class="chantierInp">${buildOptions(CHANTIERS, '', 'Chantier (optionnel)')}</select>` : ''}
+    ${showResponsable ? `<select class="respInp">${buildOptions(PERSONNES, '', 'Responsable (optionnel)')}</select>` : ''}
+    <input type="text" class="echeanceInp" placeholder="Échéance, ex. 2026-07-20 (optionnel)" />
+    <div class="row">
+      <button class="btn primary" type="button">Ajouter</button>
+      <button class="btn ghost" type="button">Annuler</button>
+    </div>
+  `;
+  const textarea = form.querySelector('textarea');
+  const catSel = form.querySelector('.catSel');
+  const prioSel = form.querySelector('.prioSel');
+  const chantierInp = form.querySelector('.chantierInp');
+  const respInp = form.querySelector('.respInp');
+  const echeanceInp = form.querySelector('.echeanceInp');
+  const [okBtn, cancelBtn] = form.querySelectorAll('.row button');
+
+  okBtn.onclick = async ()=>{
+    const val = textarea.value.trim();
+    if(!val) return;
+    await apiAddTask({
+      priority: showPriority ? prioSel.value : groupKey,
+      category: catSel.value,
+      description: val,
+      chantier: showChantier ? (chantierInp?.value.trim() || '') : groupKey,
+      responsable: showResponsable ? (respInp?.value.trim() || '') : groupKey,
+      echeance: echeanceInp.value.trim(),
+      source: 'manuel'
+    });
+  };
+  cancelBtn.onclick = ()=>{ form.remove(); addBtn.style.display = 'block'; };
+  container.insertBefore(form, addBtn);
+}
+
+document.getElementById('viewSwitch').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.view-btn');
+  if(!btn) return;
+  currentView = btn.dataset.view;
+  document.querySelectorAll('.view-btn').forEach(b=>b.classList.toggle('active', b===btn));
+  render();
+});
+
+document.getElementById('pegboard').addEventListener('click', (e)=>{
+  const tag = e.target.closest('.peg-tag');
+  if(!tag) return;
+  const cat = tag.dataset.cat;
+  if(activeFilters.has(cat)){ activeFilters.delete(cat); tag.classList.add('off'); }
+  else{ activeFilters.add(cat); tag.classList.remove('off'); }
+  render();
+});
+
+document.getElementById('clearDoneBtn').onclick = ()=> apiClearDone();
+
+const fileInput = document.getElementById('fileInput');
+const uploadBtn = document.getElementById('uploadBtn');
+uploadBtn.onclick = ()=> fileInput.click();
+
+fileInput.addEventListener('change', async ()=>{
+  const file = fileInput.files[0];
+  if(!file) return;
+  uploadBtn.disabled = true;
+  setStatus('Analyse du compte rendu « ' + file.name + ' »...');
+  try{
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch('/api/extract', { method:'POST', body: fd });
+    const data = await r.json();
+    if(!r.ok) throw new Error(data.error || 'Erreur inconnue');
+    if(data.added === 0) setStatus('Aucune tâche détectée dans ce document.', true);
+    else setStatus(`${data.added} tâche(s) importée(s) depuis « ${file.name} ».`, false, true);
+  }catch(err){
+    console.error(err);
+    setStatus('Erreur pendant l\'extraction : ' + (err.message || err), true);
+  }finally{
+    uploadBtn.disabled = false;
+    fileInput.value = '';
+  }
+});
+
+(async function init(){
+  const ref = await apiGetReferentiels();
+  PERSONNES = ref.personnes;
+  CHANTIERS = ref.chantiers;
+  tasks = await apiGetTasks();
+  render();
+  connectStream();
+})();
