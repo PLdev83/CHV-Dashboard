@@ -132,7 +132,7 @@ header .sub{color:var(--muted); font-size:13px; margin-top:4px; max-width:420px;
 }
 .col-head:active{cursor:grabbing;}
 .col.col-dragging{opacity:0.4;}
-.col-head.col-drop-target{background:rgba(224,169,78,0.08); outline:2px dashed var(--accent); outline-offset:-4px;}
+.col.col-drop-target{background:rgba(224,169,78,0.08); outline:2px dashed var(--accent); outline-offset:-4px;}
 .col-head .label{font-size:15px; font-weight:700;}
 .col-head .label.clickable-title{cursor:pointer;}
 .col-head .label.clickable-title:hover{color:var(--accent); text-decoration:underline;}

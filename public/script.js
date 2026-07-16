@@ -273,6 +273,11 @@ function render(){
 
     // Glisser-déposer de la colonne entière pour réordonner l'affichage
     // (préférence locale, distincte du drag des cartes via un type dataTransfer différent).
+    // Seul l'en-tête est saisissable (dragstart/dragend), mais la cible de dépôt est la
+    // colonne entière (col) : l'en-tête est une bande étroite et un vrai glisser-déposer
+    // à la souris atterrit facilement un peu plus bas, sur la zone des cartes. Si le drop
+    // n'était accepté que sur .col-head, ces dépôts imprécis tombaient sur le gestionnaire
+    // de .cards (qui ne comprend que les cartes, type "text/plain") et ne faisaient rien.
     head.draggable = true;
     head.addEventListener('dragstart', (e)=>{
       e.dataTransfer.setData('application/x-column-key', g.key);
@@ -280,16 +285,16 @@ function render(){
       col.classList.add('col-dragging');
     });
     head.addEventListener('dragend', ()=> col.classList.remove('col-dragging'));
-    head.addEventListener('dragover', (e)=>{
+    col.addEventListener('dragover', (e)=>{
       if(!e.dataTransfer.types.includes('application/x-column-key')) return;
       e.preventDefault();
-      head.classList.add('col-drop-target');
+      col.classList.add('col-drop-target');
     });
-    head.addEventListener('dragleave', ()=> head.classList.remove('col-drop-target'));
-    head.addEventListener('drop', (e)=>{
+    col.addEventListener('dragleave', ()=> col.classList.remove('col-drop-target'));
+    col.addEventListener('drop', (e)=>{
       if(!e.dataTransfer.types.includes('application/x-column-key')) return;
       e.preventDefault();
-      head.classList.remove('col-drop-target');
+      col.classList.remove('col-drop-target');
       const draggedKey = e.dataTransfer.getData('application/x-column-key');
       if(!draggedKey) return;
       reorderColumns(view, groups.map(x=>x.key), draggedKey, g.key);
