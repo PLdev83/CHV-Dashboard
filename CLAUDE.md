@@ -58,6 +58,24 @@ définir `SUPABASE_TABLE`, ou la définir explicitement à `tasks`.
   Anthropic et en extrait des tâches structurées
 - `GET /api/stream` — SSE, pousse la liste complète des tâches à chaque changement
 
+## Vue focus et ordre des colonnes (frontend uniquement, `public/script.js`)
+
+- **Vue focus sur une personne** : cliquer sur le tag `👤 Nom` d'une carte (visible en
+  vues "Par priorité"/"Par chantier"), ou sur le titre de colonne en vue "Par
+  personne", ouvre une vue focus (tâches de cette personne, regroupées par priorité).
+  `effectiveView()` force le groupement `'priority'` pendant le focus sans jamais
+  modifier `currentView` ni `activeFilters`, pour que "◀ Retour" restaure exactement
+  l'état précédent.
+- **Ordre des colonnes par glisser-déposer** : l'en-tête de chaque colonne
+  (`.col-head`) est draggable pour réordonner l'affichage des colonnes, indépendamment
+  du glisser-déposer des cartes individuelles (réassignation) — les deux utilisent des
+  types `dataTransfer` différents (`application/x-column-key` vs `text/plain`) pour ne
+  jamais se confondre. **C'est une préférence d'affichage locale au navigateur,
+  stockée en `localStorage`** (clé `chv-column-order-<vue>`, ex.
+  `chv-column-order-person`) — pas une donnée d'équipe, pas partagée entre postes, pas
+  synchronisée via Supabase. Les nouveaux groupes sans position enregistrée (nouvelle
+  personne, nouveau chantier) sont ajoutés à la fin sans faire planter l'affichage.
+
 ## Modèle de données (une tâche)
 
 Chaque tâche est une ligne de la table Postgres désignée par `SUPABASE_TABLE`

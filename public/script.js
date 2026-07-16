@@ -32,6 +32,39 @@ function exitFocus(){
   render();
 }
 
+// ---------- Ordre des colonnes (préférence locale au navigateur) ----------
+function columnOrderKey(view){ return 'chv-column-order-' + view; }
+function getColumnOrder(view){
+  try{
+    const raw = localStorage.getItem(columnOrderKey(view));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  }catch(e){ return []; }
+}
+function setColumnOrder(view, order){
+  try{ localStorage.setItem(columnOrderKey(view), JSON.stringify(order)); }catch(e){}
+}
+function applyColumnOrder(view, groups){
+  const order = getColumnOrder(view);
+  if(!order.length) return groups;
+  const byKey = new Map(groups.map(g=>[g.key, g]));
+  const ordered = [];
+  order.forEach(k=>{
+    if(byKey.has(k)){ ordered.push(byKey.get(k)); byKey.delete(k); }
+  });
+  groups.forEach(g=>{ if(byKey.has(g.key)) ordered.push(g); });
+  return ordered;
+}
+function reorderColumns(view, currentKeys, draggedKey, targetKey){
+  if(draggedKey === targetKey) return;
+  const newOrder = currentKeys.filter(k=>k!==draggedKey);
+  const idx = newOrder.indexOf(targetKey);
+  if(idx === -1) return;
+  newOrder.splice(idx, 0, draggedKey);
+  setColumnOrder(view, newOrder);
+  render();
+}
+
 function setStatus(msg, isError=false, isOk=false){
   const el = document.getElementById('status');
   el.textContent = msg;
@@ -162,7 +195,8 @@ function render(){
   board.innerHTML = '';
 
   const visibleTasks = tasks.filter(t=>activeFilters.has(t.category) && (!focusPerson || (t.responsable||'').trim()===focusPerson));
-  const groups = groupTasks(view, visibleTasks);
+  let groups = groupTasks(view, visibleTasks);
+  groups = applyColumnOrder(view, groups);
 
   groups.forEach(g=>{
     const col = document.createElement('div');
@@ -173,6 +207,39 @@ function render(){
     if(g.accent) head.style.setProperty('--pcolor', g.accent);
     head.innerHTML = `<div class="label">${escapeHtml(g.label)}</div><div class="count">${g.tasks.length} tâche${g.tasks.length>1?'s':''}</div>`;
     col.appendChild(head);
+
+    // Glisser-déposer de la colonne entière pour réordonner l'affichage
+    // (préférence locale, distincte du drag des cartes via un type dataTransfer différent).
+    head.draggable = true;
+    head.addEventListener('dragstart', (e)=>{
+      e.dataTransfer.setData('application/x-column-key', g.key);
+      e.dataTransfer.effectAllowed = 'move';
+      col.classList.add('col-dragging');
+    });
+    head.addEventListener('dragend', ()=> col.classList.remove('col-dragging'));
+    head.addEventListener('dragover', (e)=>{
+      if(!e.dataTransfer.types.includes('application/x-column-key')) return;
+      e.preventDefault();
+      head.classList.add('col-drop-target');
+    });
+    head.addEventListener('dragleave', ()=> head.classList.remove('col-drop-target'));
+    head.addEventListener('drop', (e)=>{
+      if(!e.dataTransfer.types.includes('application/x-column-key')) return;
+      e.preventDefault();
+      head.classList.remove('col-drop-target');
+      const draggedKey = e.dataTransfer.getData('application/x-column-key');
+      if(!draggedKey) return;
+      reorderColumns(view, groups.map(x=>x.key), draggedKey, g.key);
+    });
+
+    // En vue "Par personne", le titre de colonne ouvre la vue focus sur cette personne
+    // (le groupe "Non assigné" n'est pas une vraie personne, donc pas cliquable).
+    if(view === 'person' && g.key !== 'Non assigné'){
+      const labelEl = head.querySelector('.label');
+      labelEl.classList.add('clickable-title');
+      labelEl.title = 'Voir les tâches de ' + g.label;
+      labelEl.addEventListener('click', (e)=>{ e.stopPropagation(); enterFocus(g.key); });
+    }
 
     const cardsWrap = document.createElement('div');
     cardsWrap.className = 'cards';
