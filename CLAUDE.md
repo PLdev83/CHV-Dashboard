@@ -87,6 +87,17 @@ définir `SUPABASE_TABLE`, ou la définir explicitement à `tasks`.
   `chv-column-order-person`) — pas une donnée d'équipe, pas partagée entre postes, pas
   synchronisée via Supabase. Les nouveaux groupes sans position enregistrée (nouvelle
   personne, nouveau chantier) sont ajoutés à la fin sans faire planter l'affichage.
+- **Mise en évidence du dernier import** : colonne Postgres `import_batch` (text,
+  nullable) — `server.js` génère un UUID unique par appel à `POST /api/extract` et
+  l'assigne à toutes les tâches créées par cet import ; les créations manuelles
+  (`POST /api/tasks`) laissent ce champ à `null`. Le frontend ne mémorise rien entre
+  deux rendus : à chaque `render()`, `getLatestImportBatch()` parcourt `tasks` pour
+  trouver la tâche avec un `import_batch` non nul et le `createdAt` le plus récent,
+  et applique le style "🆕 Import récent" (liseré + fond teinté `--recent-import`,
+  classe `.card.recent-import`) à toutes les cartes partageant ce même lot. Comme le
+  calcul est refait à chaque rendu à partir des données reçues (y compris via SSE),
+  dès qu'un import plus récent arrive, l'ancien lot perd automatiquement ce style —
+  aucun état à réinitialiser manuellement. Fonctionne à l'identique dans les 3 vues.
 
 ## Modèle de données (une tâche)
 
@@ -112,6 +123,9 @@ renvoyée par l'API en JSON (clés en `camelCase`) sous la forme :
   `created_at` (bigint)**. Le frontend (`public/script.js`) attend `createdAt` en
   camelCase ; `server.js` fait le mapping (`toApiTask()`) sur toutes les réponses
   API, aucun changement requis côté frontend.
+- `import_batch` — texte, `null` pour une tâche créée manuellement ; UUID commun à
+  toutes les tâches d'un même import IA sinon. Voir "Mise en évidence du dernier
+  import" ci-dessus.
 
 ## Référentiels personnes / chantiers
 

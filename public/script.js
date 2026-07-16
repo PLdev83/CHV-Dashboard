@@ -177,6 +177,17 @@ function taskComparator(a,b){
   return (PRIO_RANK[a.priority]??9) - (PRIO_RANK[b.priority]??9) || dateSortKey(a.echeance) - dateSortKey(b.echeance);
 }
 
+// Recalculé à chaque rendu à partir des tâches reçues (pas de mémorisation entre rendus) :
+// reste correct même avec les mises à jour temps réel (SSE) et entre plusieurs personnes.
+function getLatestImportBatch(){
+  let latest = null;
+  tasks.forEach(t=>{
+    if(!t.import_batch) return;
+    if(!latest || t.createdAt > latest.createdAt) latest = t;
+  });
+  return latest ? latest.import_batch : null;
+}
+
 function groupTasks(view, visibleTasks){
   if(view === 'priority'){
     return PRIORITIES.map(p=>({
@@ -248,6 +259,7 @@ function render(){
   const visibleTasks = tasks.filter(t=>activeFilters.has(t.category) && (!focusPerson || (t.responsable||'').trim()===focusPerson));
   let groups = groupTasks(view, visibleTasks);
   groups = applyColumnOrder(view, groups);
+  const latestImportBatch = getLatestImportBatch();
 
   groups.forEach(g=>{
     const col = document.createElement('div');
@@ -300,7 +312,7 @@ function render(){
       hint.textContent = 'Rien ici pour le moment.';
       cardsWrap.appendChild(hint);
     }
-    g.tasks.forEach(t=> cardsWrap.appendChild(renderCard(t)));
+    g.tasks.forEach(t=> cardsWrap.appendChild(renderCard(t, latestImportBatch)));
     col.appendChild(cardsWrap);
 
     cardsWrap.addEventListener('dragover', (e)=>{ e.preventDefault(); cardsWrap.classList.add('drag-over'); });
@@ -388,11 +400,12 @@ function renderEditCard(t){
   return card;
 }
 
-function renderCard(t){
+function renderCard(t, latestImportBatch){
   if(editingId === t.id) return renderEditCard(t);
 
+  const isRecentImport = !!latestImportBatch && t.import_batch === latestImportBatch;
   const card = document.createElement('div');
-  card.className = 'card' + (t.done ? ' done' : '');
+  card.className = 'card' + (t.done ? ' done' : '') + (isRecentImport ? ' recent-import' : '');
   card.style.setProperty('--cat-color', CATS[t.category]?.color || 'var(--muted)');
   card.draggable = true;
   card.addEventListener('dragstart', (e)=>{
@@ -425,6 +438,12 @@ function renderCard(t){
 
   const meta = document.createElement('div');
   meta.className = 'meta';
+  if(isRecentImport){
+    const newTag = document.createElement('span');
+    newTag.className = 'tag recent-import-badge';
+    newTag.textContent = '🆕 Import récent';
+    meta.appendChild(newTag);
+  }
   if(effectiveView() !== 'priority'){
     const pTag = document.createElement('span');
     pTag.className = 'tag';

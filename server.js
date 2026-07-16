@@ -11,6 +11,7 @@ require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 
 const PORT = process.env.PORT || 3000;
@@ -210,6 +211,10 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
   }
   if (!req.file) return res.status(400).json({ error: 'Aucun fichier reçu.' });
 
+  // Un seul identifiant de lot pour toutes les tâches de cet import, pour que le
+  // frontend puisse distinguer visuellement "le dernier import" des autres tâches.
+  const importBatch = crypto.randomUUID();
+
   try {
     const isPdf = req.file.mimetype === 'application/pdf' || req.file.originalname.toLowerCase().endsWith('.pdf');
     let content;
@@ -270,7 +275,8 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
       echeance: cleanField(t.e),
       done: false,
       source: req.file.originalname,
-      created_at: Date.now()
+      created_at: Date.now(),
+      import_batch: importBatch
     }));
     const { data, error } = await supabase.from(SUPABASE_TABLE).insert(rows).select();
     if (error) throw error;

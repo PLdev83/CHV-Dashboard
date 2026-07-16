@@ -16,6 +16,7 @@
   --cat-livraison:#7FD8E0;
   --cat-grue:#E08F6F;
   --cat-bureau:#9AAAB5;
+  --recent-import:#E070B8;
 }
 *{box-sizing:border-box;}
 body{
@@ -147,6 +148,10 @@ header .sub{color:var(--muted); font-size:13px; margin-top:4px; max-width:420px;
   cursor:grab;
 }
 .card.dragging{opacity:0.35;}
+.card.recent-import{
+  background:rgba(224,112,184,0.08);
+  box-shadow:0 0 0 1px rgba(224,112,184,0.5);
+}
 .card.edit-mode{cursor:default; flex-direction:column;}
 .card.edit-mode .body{width:100%;}
 .card.edit-mode textarea{
@@ -172,6 +177,7 @@ header .sub{color:var(--muted); font-size:13px; margin-top:4px; max-width:420px;
   white-space:nowrap;
 }
 .tag.date{color:var(--ink); background:rgba(224,169,78,0.16);}
+.tag.recent-import-badge{color:var(--recent-import); background:rgba(224,112,184,0.18);}
 .tag.clickable{cursor:pointer;}
 .tag.clickable:hover{background:rgba(255,255,255,0.16); color:var(--ink);}
 .card .del{
