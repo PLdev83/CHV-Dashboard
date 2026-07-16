@@ -66,6 +66,18 @@ définir `SUPABASE_TABLE`, ou la définir explicitement à `tasks`.
   `effectiveView()` force le groupement `'priority'` pendant le focus sans jamais
   modifier `currentView` ni `activeFilters`, pour que "◀ Retour" restaure exactement
   l'état précédent.
+- **Annulation (Ctrl+Z / Cmd+Z)** : historique en mémoire (`actionHistory`, 15
+  dernières actions max), propre à ce navigateur et perdu au rechargement — pas de
+  localStorage, pas de synchronisation entre postes. Couvre : création manuelle,
+  édition, suppression, coché/décoché, réassignation par glisser-déposer, et import
+  IA (une seule entrée groupée pour tout l'import). Chaque entrée stocke sa propre
+  fonction d'inversion (`undo`) : création → suppression de l'id créé ; suppression →
+  recréation via POST (nouvel id, acceptable) ; édition/coché/réassignation → PUT qui
+  restaure les valeurs d'avant. Le raccourci n'intercepte pas Ctrl+Z si le focus est
+  dans un champ `input`/`textarea`/`contentEditable`, pour laisser l'undo natif du
+  navigateur fonctionner dans les formulaires d'édition. Si l'inversion échoue (tâche
+  changée/supprimée entre-temps par quelqu'un d'autre), un message d'erreur s'affiche
+  et l'entrée est retirée de l'historique sans faire planter l'appli.
 - **Ordre des colonnes par glisser-déposer** : l'en-tête de chaque colonne
   (`.col-head`) est draggable pour réordonner l'affichage des colonnes, indépendamment
   du glisser-déposer des cartes individuelles (réassignation) — les deux utilisent des

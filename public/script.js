@@ -71,6 +71,57 @@ function setStatus(msg, isError=false, isOk=false){
   el.className = isError ? 'error' : (isOk ? 'ok' : '');
 }
 
+// ---------- Annulation (Ctrl+Z) ----------
+// Historique en mémoire seulement (perdu au rechargement), propre à ce navigateur :
+// pas de localStorage, pas de synchronisation entre postes.
+const MAX_HISTORY = 15;
+let actionHistory = [];
+function truncateLabel(s, n=40){
+  s = String(s||'');
+  return s.length > n ? s.slice(0, n-1) + '…' : s;
+}
+function recordAction(label, undo){
+  actionHistory.push({ label, undo });
+  if(actionHistory.length > MAX_HISTORY) actionHistory.shift();
+}
+// Variantes qui lèvent une erreur si la requête échoue, utilisées uniquement par les
+// annulations : on veut savoir si l'inverse a vraiment fonctionné (ex. 404 si la tâche
+// a changé entre-temps), contrairement aux actions normales de l'appli qui n'y regardent pas.
+async function apiDeleteTaskChecked(id){
+  const r = await fetch('/api/tasks/' + id, { method:'DELETE' });
+  if(!r.ok) throw new Error('Échec de la suppression (id ' + id + ')');
+}
+async function apiUpdateTaskChecked(id, patch){
+  const r = await fetch('/api/tasks/' + id, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patch) });
+  if(!r.ok) throw new Error('Échec de la modification (id ' + id + ')');
+  return r.json();
+}
+async function apiAddTaskChecked(task){
+  const r = await fetch('/api/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(task) });
+  if(!r.ok) throw new Error('Échec de la création');
+  return r.json();
+}
+async function undoLastAction(){
+  const action = actionHistory.pop();
+  if(!action) return;
+  try{
+    await action.undo();
+    setStatus('Action annulée : ' + action.label, false, true);
+  }catch(err){
+    console.error('Annulation impossible', err);
+    setStatus("Impossible d'annuler : cette tâche a changé depuis.", true);
+  }
+}
+document.addEventListener('keydown', (e)=>{
+  const key = e.key.toLowerCase();
+  if(!(e.ctrlKey || e.metaKey) || key !== 'z' || e.shiftKey) return;
+  const target = e.target;
+  const isEditableField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+  if(isEditableField) return; // laisse l'undo natif du navigateur agir dans le champ
+  e.preventDefault();
+  undoLastAction();
+});
+
 // ---------- API ----------
 async function apiGetTasks(){
   const r = await fetch('/api/tasks');
@@ -262,11 +313,13 @@ function render(){
       if(!t) return;
       const fallback = view==='person' ? 'Non assigné' : view==='chantier' ? 'Sans chantier' : null;
       const value = (fallback && g.key===fallback) ? '' : g.key;
-      const patch = {};
-      if(view==='priority') patch.priority = value;
-      else if(view==='person') patch.responsable = value;
-      else if(view==='chantier') patch.chantier = value;
-      await apiUpdateTask(t.id, patch);
+      const field = view==='priority' ? 'priority' : view==='person' ? 'responsable' : 'chantier';
+      const before = t[field];
+      await apiUpdateTask(t.id, { [field]: value });
+      const fieldLabel = field==='priority' ? 'priorité' : field==='responsable' ? 'responsable' : 'chantier';
+      recordAction(`changement de ${fieldLabel} : « ${truncateLabel(t.description)} »`, async ()=>{
+        await apiUpdateTaskChecked(t.id, { [field]: before });
+      });
     });
 
     const addRow = document.createElement('div');
@@ -320,8 +373,15 @@ function renderEditCard(t){
       responsable: wrap.querySelector('.editResp').value.trim(),
       echeance: wrap.querySelector('.editEch').value.trim()
     };
+    const before = {
+      description: t.description, category: t.category, priority: t.priority,
+      chantier: t.chantier, responsable: t.responsable, echeance: t.echeance
+    };
     editingId = null;
     await apiUpdateTask(t.id, patch);
+    recordAction(`modification : « ${truncateLabel(before.description)} »`, async ()=>{
+      await apiUpdateTaskChecked(t.id, before);
+    });
   };
   wrap.querySelector('.editCancel').onclick = ()=>{ editingId = null; render(); };
 
@@ -345,7 +405,13 @@ function renderCard(t){
   const cb = document.createElement('input');
   cb.type = 'checkbox';
   cb.checked = !!t.done;
-  cb.onchange = async ()=>{ await apiUpdateTask(t.id, { done: cb.checked }); };
+  cb.onchange = async ()=>{
+    const wasDone = t.done;
+    await apiUpdateTask(t.id, { done: cb.checked });
+    recordAction(`${cb.checked ? 'tâche cochée' : 'tâche décochée'} : « ${truncateLabel(t.description)} »`, async ()=>{
+      await apiUpdateTaskChecked(t.id, { done: wasDone });
+    });
+  };
 
   const body = document.createElement('div');
   body.className = 'body';
@@ -395,7 +461,17 @@ function renderCard(t){
   del.className = 'del';
   del.textContent = '✕';
   del.title = 'Supprimer';
-  del.onclick = async (e)=>{ e.stopPropagation(); await apiDeleteTask(t.id); };
+  del.onclick = async (e)=>{
+    e.stopPropagation();
+    await apiDeleteTask(t.id);
+    recordAction(`suppression : « ${truncateLabel(t.description)} »`, async ()=>{
+      const recreated = await apiAddTaskChecked({
+        priority: t.priority, category: t.category, description: t.description,
+        chantier: t.chantier, responsable: t.responsable, echeance: t.echeance, source: t.source
+      });
+      if(t.done) await apiUpdateTaskChecked(recreated.id, { done: true });
+    });
+  };
 
   card.appendChild(cb);
   card.appendChild(body);
@@ -434,7 +510,7 @@ function showAddForm(container, addBtn, groupKey){
   okBtn.onclick = async ()=>{
     const val = textarea.value.trim();
     if(!val) return;
-    await apiAddTask({
+    const created = await apiAddTask({
       priority: showPriority ? prioSel.value : groupKey,
       category: catSel.value,
       description: val,
@@ -442,6 +518,9 @@ function showAddForm(container, addBtn, groupKey){
       responsable: showResponsable ? (respInp?.value.trim() || '') : groupKey,
       echeance: echeanceInp.value.trim(),
       source: 'manuel'
+    });
+    recordAction(`création : « ${truncateLabel(val)} »`, async ()=>{
+      await apiDeleteTaskChecked(created.id);
     });
   };
   cancelBtn.onclick = ()=>{ form.remove(); addBtn.style.display = 'block'; };
@@ -483,7 +562,13 @@ fileInput.addEventListener('change', async ()=>{
     const data = await r.json();
     if(!r.ok) throw new Error(data.error || 'Erreur inconnue');
     if(data.added === 0) setStatus('Aucune tâche détectée dans ce document.', true);
-    else setStatus(`${data.added} tâche(s) importée(s) depuis « ${file.name} ».`, false, true);
+    else{
+      setStatus(`${data.added} tâche(s) importée(s) depuis « ${file.name} ».`, false, true);
+      const importedIds = (data.tasks || []).map(x=>x.id);
+      recordAction(`import « ${file.name} » (${data.added} tâche${data.added>1?'s':''})`, async ()=>{
+        for(const id of importedIds){ await apiDeleteTaskChecked(id); }
+      });
+    }
   }catch(err){
     console.error(err);
     setStatus('Erreur pendant l\'extraction : ' + (err.message || err), true);
