@@ -87,6 +87,11 @@ app.get('/api/tasks', async (req, res) => {
 });
 
 app.post('/api/tasks', async (req, res) => {
+  // Garde-fou minimal contre le spam/bots sur cet endpoint public (voir CLAUDE.md,
+  // section "Limites connues") : rejette toute tâche sans description exploitable.
+  if (!String(req.body.description || '').trim()) {
+    return res.status(400).json({ error: 'Le champ "description" est requis et ne peut pas être vide.' });
+  }
   const row = {
     priority: req.body.priority || 'À vérifier',
     category: req.body.category || 'Bureau',
@@ -270,18 +275,27 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
     }
     if (!Array.isArray(extracted)) throw new Error('Réponse inattendue de l\'IA');
 
-    const rows = extracted.map(t => ({
-      priority: ['Urgent', 'Important', 'Normal', 'À vérifier'].includes(t.p) ? t.p : 'À vérifier',
-      category: ['Atelier', 'Étude', 'Commande/Matériel', 'Livraison', 'Grue/Levage', 'Bureau'].includes(t.c) ? t.c : 'Bureau',
-      description: String(t.d || '').slice(0, 300),
-      chantier: cleanField(t.ch),
-      responsable: cleanField(t.r),
-      echeance: cleanField(t.e),
-      done: false,
-      source: req.file.originalname,
-      created_at: Date.now(),
-      import_batch: importBatch
-    }));
+    // Même garde-fou que POST /api/tasks : écarte les entrées sans description
+    // exploitable (par cohérence, même si l'IA n'a jamais renvoyé ce cas en pratique).
+    const rows = extracted
+      .map(t => ({
+        priority: ['Urgent', 'Important', 'Normal', 'À vérifier'].includes(t.p) ? t.p : 'À vérifier',
+        category: ['Atelier', 'Étude', 'Commande/Matériel', 'Livraison', 'Grue/Levage', 'Bureau'].includes(t.c) ? t.c : 'Bureau',
+        description: String(t.d || '').slice(0, 300),
+        chantier: cleanField(t.ch),
+        responsable: cleanField(t.r),
+        echeance: cleanField(t.e),
+        done: false,
+        source: req.file.originalname,
+        created_at: Date.now(),
+        import_batch: importBatch
+      }))
+      .filter(r => r.description.trim());
+
+    if (rows.length === 0) {
+      return res.status(400).json({ error: "Aucune tâche avec une description valide n'a été extraite de ce document." });
+    }
+
     const { data, error } = await supabase.from(SUPABASE_TABLE).insert(rows).select();
     if (error) throw error;
     await broadcast();

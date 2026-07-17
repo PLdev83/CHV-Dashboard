@@ -196,6 +196,18 @@ distant existant. Les anciens fichiers `download`, `script.js`, `style.css` à l
 
 - Pas d'authentification : toute personne avec le lien peut tout voir/modifier, sans
   distinction de droits par rôle.
+- **Incident du 2026-07-16** : 1024 tâches vides (description vide, `source: 'manuel'`,
+  `import_batch: null`) créées en production via des appels bruts et rapprochés à
+  `POST /api/tasks`, sans passer par le formulaire de l'app — signature typique d'un
+  bot/scanner automatisé sondant l'endpoint public. Supprimées le 2026-07-17 (86 vraies
+  tâches conservées, vérifiées). En réponse, `POST /api/tasks` et `POST /api/extract`
+  rejettent désormais (400) toute tâche sans description exploitable (vide ou uniquement
+  des espaces). **Attention : c'est une protection minimale contre le spam, pas une
+  authentification.** L'endpoint reste public et accessible à quiconque a l'URL — un bot
+  peut toujours poster des tâches avec une description non vide (juste plus difficile à
+  distinguer du bruit). Si l'incident se reproduit, même avec des descriptions non vides
+  cette fois, il faudra une vraie protection : clé API partagée dans un header, rate
+  limiting, ou authentification par compte.
 - Pas de gestion de conflit : dernière sauvegarde gagne en cas de modification
   simultanée de la même tâche.
 - ~~Stockage fichier JSON qui ne supportait pas plusieurs instances serveur en
