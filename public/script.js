@@ -574,14 +574,64 @@ const fileInput = document.getElementById('fileInput');
 const uploadBtn = document.getElementById('uploadBtn');
 uploadBtn.onclick = ()=> fileInput.click();
 
+async function apiGetTasksBySource(filename){
+  const r = await fetch('/api/tasks/by-source/' + encodeURIComponent(filename));
+  return r.json();
+}
+
+// Résout 'replace' / 'add' (les deux boutons), ou 'cancel' si l'utilisateur clique
+// en dehors de la boîte (pas de bouton dédié demandé, mais il faut un moyen d'annuler).
+function showReimportDialog(fileName, info){
+  return new Promise(resolve=>{
+    const dateStr = info.lastImportAt ? new Date(info.lastImportAt).toLocaleDateString('fr-FR', { day:'numeric', month:'long', year:'numeric' }) : 'date inconnue';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <p>Ce fichier « ${escapeHtml(fileName)} » a déjà été importé le ${dateStr}
+        (${info.totalTasks} tâche${info.totalTasks>1?'s':''}).</p>
+        <p>Remplacer les anciennes tâches par ce nouvel import, ou ajouter en plus
+        (risque de doublons) ?</p>
+        <div class="row">
+          <button class="btn primary" data-choice="replace" type="button">Remplacer</button>
+          <button class="btn ghost" data-choice="add" type="button">Ajouter quand même</button>
+        </div>
+      </div>
+    `;
+    overlay.addEventListener('click', (e)=>{
+      const btn = e.target.closest('button[data-choice]');
+      const choice = btn ? btn.dataset.choice : (e.target === overlay ? 'cancel' : null);
+      if(!choice) return;
+      overlay.remove();
+      resolve(choice);
+    });
+    document.body.appendChild(overlay);
+  });
+}
+
 fileInput.addEventListener('change', async ()=>{
   const file = fileInput.files[0];
   if(!file) return;
   uploadBtn.disabled = true;
+
+  let replaceSource = null;
+  try{
+    const info = await apiGetTasksBySource(file.name);
+    if(info.totalTasks > 0){
+      const choice = await showReimportDialog(file.name, info);
+      if(choice === 'cancel'){ uploadBtn.disabled = false; fileInput.value = ''; return; }
+      if(choice === 'replace') replaceSource = file.name;
+    }
+  }catch(err){
+    console.error('Vérification des imports précédents impossible', err);
+    // Non bloquant : on continue en import normal si cette vérification échoue.
+  }
+
   setStatus('Analyse du compte rendu « ' + file.name + ' »...');
   try{
     const fd = new FormData();
     fd.append('file', file);
+    if(replaceSource) fd.append('replaceSource', replaceSource);
     const r = await fetch('/api/extract', { method:'POST', body: fd });
     const data = await r.json();
     if(!r.ok) throw new Error(data.error || 'Erreur inconnue');

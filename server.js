@@ -127,6 +127,22 @@ app.delete('/api/tasks/:id', async (req, res) => {
   res.status(204).end();
 });
 
+// Permet au frontend de détecter un réimport du même compte rendu avant de lancer
+// l'extraction, pour proposer de remplacer l'ancien lot plutôt que d'accumuler des doublons.
+app.get('/api/tasks/by-source/:filename', async (req, res) => {
+  try {
+    const { data, error } = await supabase.from(SUPABASE_TABLE)
+      .select('import_batch, created_at')
+      .eq('source', req.params.filename);
+    if (error) throw error;
+    const batchCount = new Set(data.map(r => r.import_batch).filter(Boolean)).size;
+    const lastImportAt = data.length ? Math.max(...data.map(r => r.created_at)) : null;
+    res.json({ totalTasks: data.length, batchCount, lastImportAt });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/tasks/clear-done', async (req, res) => {
   const { error } = await supabase.from(SUPABASE_TABLE).delete().eq('done', true);
   if (error) return res.status(500).json({ error: error.message });
@@ -294,6 +310,15 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
 
     if (rows.length === 0) {
       return res.status(400).json({ error: "Aucune tâche avec une description valide n'a été extraite de ce document." });
+    }
+
+    // Réimport volontaire (confirmé côté frontend) : remplace l'ancien lot de ce
+    // fichier plutôt que d'accumuler des doublons. Fait après l'extraction réussie,
+    // pour ne jamais perdre l'ancien lot si l'appel IA échoue.
+    const replaceSource = String(req.body.replaceSource || '').trim();
+    if (replaceSource) {
+      const { error: delErr } = await supabase.from(SUPABASE_TABLE).delete().eq('source', replaceSource);
+      if (delErr) throw delErr;
     }
 
     const { data, error } = await supabase.from(SUPABASE_TABLE).insert(rows).select();

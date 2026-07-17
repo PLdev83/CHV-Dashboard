@@ -52,11 +52,30 @@ définir `SUPABASE_TABLE`, ou la définir explicitement à `tasks`.
 
 - `GET /api/tasks`, `POST /api/tasks`, `PUT /api/tasks/:id`, `DELETE /api/tasks/:id`
 - `POST /api/tasks/clear-done` — supprime les tâches marquées terminées
+- `GET /api/tasks/by-source/:filename` — renvoie `{ totalTasks, batchCount, lastImportAt }`
+  pour un nom de fichier exact, utilisé par le frontend pour détecter un réimport avant
+  de lancer l'extraction (voir "Détection de réimport" ci-dessous)
 - `GET /api/referentiels` — renvoie les listes normalisées PERSONNES / CHANTIERS
   (codées en dur dans `server.js`)
-- `POST /api/extract` (multipart, champ `file`) — envoie un .txt/.pdf à l'API
-  Anthropic et en extrait des tâches structurées
+- `POST /api/extract` (multipart, champ `file`, champ optionnel `replaceSource`) —
+  envoie un .txt/.pdf à l'API Anthropic et en extrait des tâches structurées
 - `GET /api/stream` — SSE, pousse la liste complète des tâches à chaque changement
+
+### Détection de réimport du même compte rendu
+
+Avant d'envoyer un fichier à `/api/extract`, le frontend (`public/script.js`, fonction
+attachée à `fileInput`) appelle `GET /api/tasks/by-source/:filename` (nom de fichier
+exact). Si des tâches existent déjà pour ce nom, une boîte de dialogue (`showReimportDialog()`,
+overlay `.modal-overlay`/`.modal` dans `style.css`) propose deux choix :
+- **Remplacer** : le frontend envoie `replaceSource=<nom du fichier>` avec l'import. Côté
+  serveur, `POST /api/extract` supprime alors `WHERE source = replaceSource` (tous
+  `import_batch` confondus) **après** l'extraction IA réussie mais **avant** l'insertion
+  du nouveau lot — l'ancien lot n'est jamais perdu si l'appel à l'IA échoue.
+- **Ajouter quand même** : comportement inchangé, aucun paramètre envoyé, les deux lots
+  cohabitent (comme avant cette fonctionnalité, avec le risque de doublons assumé).
+
+Cette détection se fait uniquement sur le nom de fichier exact (`source`), pas sur le
+contenu : renommer légèrement un fichier avant réimport contournerait la détection.
 
 ## Vue focus et ordre des colonnes (frontend uniquement, `public/script.js`)
 
