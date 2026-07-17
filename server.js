@@ -19,7 +19,7 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 // Nombre maximum de tâches extraites par import. Sans la contrainte des artefacts Claude,
 // on peut viser plus large : ajuste selon la longueur réelle de tes comptes rendus.
-const MAX_TASKS_PER_IMPORT = parseInt(process.env.MAX_TASKS_PER_IMPORT || '40', 10);
+const MAX_TASKS_PER_IMPORT = parseInt(process.env.MAX_TASKS_PER_IMPORT || '80', 10);
 
 const app = express();
 app.use(express.json());
@@ -263,7 +263,7 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
       },
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
-        max_tokens: 4096,
+        max_tokens: 8192,
         messages: [{ role: 'user', content }]
       })
     });

@@ -29,7 +29,7 @@ bureau via Server-Sent Events.
 - `SUPABASE_TABLE` (optionnel, défaut `tasks`) — nom de la table Supabase utilisée
   par toutes les requêtes de `server.js`. Voir "Séparation test/prod" ci-dessous.
 - `PORT` (défaut 3000), `ANTHROPIC_MODEL` (défaut `claude-sonnet-4-6`),
-  `MAX_TASKS_PER_IMPORT` (défaut 40).
+  `MAX_TASKS_PER_IMPORT` (défaut 80).
 
 ### Séparation test/prod dans Supabase
 
@@ -178,9 +178,14 @@ tâches importantes mentionnées ailleurs dans le document viennent en compléme
 Si CHV modifie la structure de son prompt Plaud, `buildPrompt()` devra être adapté
 en conséquence pour que l'extraction reste fiable.
 
-`MAX_TASKS_PER_IMPORT` (défaut 40) borne le nombre de tâches extraites par import,
-pour éviter les réponses IA tronquées sur de longs comptes rendus ; en cas de
-dépassement, le prompt demande de prioriser les tâches `Urgent` puis `Important`.
+`MAX_TASKS_PER_IMPORT` (défaut 80, relevé depuis 40 le 2026-07-17 — certains comptes
+rendus Plaud contiennent 60 à 90 actions) borne le nombre de tâches extraites par
+import ; en cas de dépassement, le prompt demande de prioriser les tâches `Urgent`
+puis `Important`. `max_tokens` de l'appel Anthropic est fixé à 8192 (relevé depuis
+4096 en même temps) pour limiter le risque de troncature de la réponse IA avec un
+nombre de tâches plus élevé ; le mécanisme de réparation JSON tronqué existant
+(dans `POST /api/extract`) reste un filet de sécurité supplémentaire en cas de
+coupure malgré tout.
 
 ## Déploiement Render
 
