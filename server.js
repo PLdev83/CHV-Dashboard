@@ -236,6 +236,12 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
   }
   if (!req.file) return res.status(400).json({ error: 'Aucun fichier reçu.' });
 
+  // busboy (utilisé par multer) ne décode pas le nom de fichier multipart en UTF-8 :
+  // les caractères accentués arrivent mojibake (octets UTF-8 réinterprétés en latin1).
+  // On les redécode ici pour que "source" soit stocké et comparé correctement partout
+  // (GET /api/tasks/by-source/, réimport avec replaceSource, affichage frontend).
+  req.file.originalname = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+
   // Un seul identifiant de lot pour toutes les tâches de cet import, pour que le
   // frontend puisse distinguer visuellement "le dernier import" des autres tâches.
   const importBatch = crypto.randomUUID();

@@ -77,6 +77,16 @@ overlay `.modal-overlay`/`.modal` dans `style.css`) propose deux choix :
 Cette détection se fait uniquement sur le nom de fichier exact (`source`), pas sur le
 contenu : renommer légèrement un fichier avant réimport contournerait la détection.
 
+**Correctif d'encodage (2026-07-17)** : `busboy` (utilisé par `multer`) ne décode pas le
+nom de fichier multipart en UTF-8 — les caractères accentués arrivaient mojibake côté
+serveur (ex. `résumé` reçu comme `rÃ©sumÃ©`, les octets UTF-8 corrects étant réinterprétés
+en latin1). Ça cassait silencieusement la détection de réimport pour tout fichier avec
+des accents : le `source` stocké en base ne correspondait plus au nom réel envoyé par le
+frontend. `POST /api/extract` corrige désormais `req.file.originalname` avec
+`Buffer.from(req.file.originalname, 'latin1').toString('utf8')` juste après réception du
+fichier, avant toute utilisation (stockage `source`, prompt IA). Vérifié avec un nom de
+fichier contenant espaces et accent (`planning d'hier - résumé.pdf`).
+
 ## Vue focus et ordre des colonnes (frontend uniquement, `public/script.js`)
 
 - **Vue focus sur une personne** : cliquer sur le tag `👤 Nom` d'une carte (visible en
