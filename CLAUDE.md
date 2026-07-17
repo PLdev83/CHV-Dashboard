@@ -137,6 +137,18 @@ endpoint. Il n'y a donc **qu'un seul endroit à modifier** (`server.js`) pour me
 à jour ces référentiels — pas de risque de désynchronisation entre extraction IA et
 menus du frontend.
 
+**`PERSONNES` est restreinte au "Personnel d'encadrement et de préparation"** (11
+personnes, depuis 2026-07-17), en cohérence avec le prompt Plaud AI qui applique la
+même restriction sur les comptes rendus importés. Seules ces personnes peuvent être
+assignées comme "Responsable" d'une tâche (extraction IA ou menu manuel). Le
+référentiel complet du personnel (chefs d'équipe, ouvriers...) n'est volontairement
+plus utilisé dans l'app : ces personnes peuvent être mentionnées dans le texte d'une
+tâche, mais pas assignées comme responsables. Les tâches existantes en base dont le
+responsable n'est plus dans cette liste restreinte ne sont pas migrées : elles
+restent affichées normalement, et leur valeur de responsable apparaît simplement
+ajoutée en tête du menu déroulant (`buildOptions()` côté client ajoute toute valeur
+courante absente de la liste).
+
 ## Logique du prompt d'extraction IA
 
 `buildPrompt()` (dans `server.js`) suppose que le compte rendu suit la structure

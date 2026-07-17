@@ -135,17 +135,21 @@ app.post('/api/tasks/clear-done', async (req, res) => {
 });
 
 // ---------- Référentiels (repris du prompt Plaud) ----------
+// PERSONNES est restreinte au personnel d'encadrement et de préparation (cf. CLAUDE.md) :
+// seules ces personnes peuvent être assignées comme "Responsable" d'une tâche, en
+// cohérence avec le prompt Plaud AI qui applique la même restriction.
 const PERSONNES = [
-  "Boris GARROT","Clément LAROCHE","Antoine CHANTEGRET","Pierre Louis ALLO","Alain BUISSON",
-  "Thierry AUJOGUE","François MERCIER","Syamak AZADEH","Cathy GOUTAL","Melissa ORLA","Adam BRAUX",
-  "Gaël ALESSANDRI","Lionel SELLIER","Stéphane ABAD","Thomas FERRER",
-  "Axel LEMOINE","Cédric MARCHAL","Rory BOULIC","Ken SCHOEN","Eddy LORENC","Mickael ORAND",
-  "Christophe ARNAUD","Clément MOREL","Bruno LUKASZEWSKI","Damien RICHY","Marc RAMBAUD",
-  "Luis ANTUNES DA COSTA","Sdiri BELGACEM","Noah VITTU","Hafedh GUEZGUEZ","Victor MONTANELI","Aurélien COLAS",
-  "Simon BERLINE","Noé BONNIN","Mohammed MARHOUCHE","Alex ROBIATI","Emmanuel RANAIVO","Laurent PIERROT",
-  "Saïd MOUHAJAR","Noé MENZEL","Hamza MARHOUCHE","Stéphane AUGUSTE","Brandon FERREIRA",
-  "Lassad BEN MUSTAPHA","Shun VIAN","Enzo PIEDCOQ","Lenny AUBERT","Mickael ROMANO","Michel MOLINENGO",
-  "Ethan GROLLINGER","Philippe BERCY"
+  "Pierre Louis ALLO",
+  "Boris GARROT",
+  "Clément LAROCHE",
+  "Antoine CHANTEGRET",
+  "Gaël ALESSANDRI",
+  "Lionel SELLIER",
+  "Alain BUISSON",
+  "Thierry AUJOGUE",
+  "Cathy GOUTAL",
+  "Melissa ORLA",
+  "Syamak AZADEH"
 ];
 const CHANTIERS = [
   "Ephrussi / Villa Ephrussi / Rothschild","Cabrières / école des Cabrières / Mougins","Le Plan de la Tour",
